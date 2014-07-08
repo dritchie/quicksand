@@ -88,7 +88,7 @@ local log_gamma = S.memoize(function(real)
 		var x = xx - 1.0
 		var tmp = x + 5.5
 		tmp = tmp - (x + 0.5)*tmath.log(tmp)
-		var ser = T(1.000000000190015)
+		var ser = real(1.000000000190015)
 		for j=0,5 do
 			x = x + 1.0
 			ser = ser + gamma_cof[j] / x
@@ -99,8 +99,8 @@ end)
 
 
 R.gamma = S.memoize(function(real)
-	terra sample(a: real, b: real) : real
-		if a < 1.0 then return sample(1.0+a,b) * tmath.pow(R.random(), 1.0/a)) end
+	local terra sample(a: real, b: real) : real
+		if a < 1.0 then return sample(1.0+a,b) * tmath.pow(R.random(), 1.0/a) end
 		var x:double, v:real, u:double
 		var d = a - 1.0/3.0
 		var c = 1.0/tmath.sqrt(9.0*d)
@@ -136,8 +136,8 @@ end)
 R.beta = S.memoize(function(real)
 	return {
 		sample = terra(a: real, b: real) : real
-			var x = [gamma(real)].sample(a, 1.0)
-			return x / (x + [gamma(real)].sample(b, 1.0)))
+			var x = [R.gamma(real)].sample(a, 1.0)
+			return x / (x + [R.gamma(real)].sample(b, 1.0))
 		end,
 		logprob = terra(x: real, a: real, b: real) : real
 			if x > 0.0 and x < 1.0 then
@@ -239,7 +239,7 @@ R.poisson = S.memoize(function(real)
 			var k = 0.0
 			while mu > 10 do
 				var m = (7.0/8)*mu
-				var x = [R.gamma(real).sample(m, 1.0)
+				var x = [R.gamma(real)].sample(m, 1.0)
 				if x > mu then
 					return int(k + [R.binomial(real)].sample(mu/x, (m-1)))
 				else
@@ -279,7 +279,7 @@ R.multinomial_array = S.memoize(function(real, N)
 		end,
 		logprob = terra(val: int, params: real[N]) : real
 			if val < 0 or val >= N then
-			return [-math.huge]
+				return [-math.huge]
 			end
 			var sum = real(0.0)
 			for i=0,N do
@@ -301,12 +301,12 @@ R.multinomial_vector = S.memoize(function(real)
 			repeat
 				probAccum = probAccum + params(result)
 				result = result + 1
-			until probAccum > x or result == N
+			until probAccum > x or result == params:size()
 			return result - 1
 		end,
 		logprob = terra(val: int, params: &S.Vector(real)) : real
-			if val < 0 or val >= N then
-			return [-math.huge]
+			if val < 0 or val >= params:size() then
+				return [-math.huge]
 			end
 			var sum = real(0.0)
 			for i=0,params:size() do
