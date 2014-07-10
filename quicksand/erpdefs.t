@@ -1,0 +1,2 @@
+-- TODO:
+-- uniform, beta, gamma - when real = num, automatically insert bounds

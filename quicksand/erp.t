@@ -6,23 +6,31 @@ local qs = terralib.require("globals")
 
 -- The number of parameters required by a random choice
 local function getNumParams(sl)
-	-- The number of arguments to logprob, minus 1 (that's the value to be scored)
-	return #sl.logprob:gettype().parameters - 1
+	return #sl.sample:gettype().parameters
 end
 
 -- Default proposal for when no custom one is provided
 -- (Just resamples from the prior)
 local function makeDefaultProposal(sl)
-	return macro(function(currval, ...)
-		local args = {...}
-		return quote
-			var newval = sl.sample([args])
-			var fwdPropLP = sl.logprob(newval, [args])
-			var rvsPropLP = sl.logprob(currval, [args])
-		in
-			newval, fwdPropLP, rvsPropLP
-		end
-	end)
+	local ArgTypes = sl.logprob:gettype().parameters
+	local ValType = ArgTypes[1]
+	local ParamTypes = terralib.newlist()
+	for i=2,#ArgTypes do ParamTypes:insert(ArgTypes[i]) end
+	local currval = symbol(ValType)
+	local params = ParamTypes:map(function(pt) return symbol(pt) end)
+	local SampleValType = sl.sample:gettype().returntype
+	return terra(currval, [params])
+		var newval = sl.sample([params])
+		var fwdlp = sl.logprob(escape
+			if ValType == &SampleValType then
+				emit `&newval
+			else
+				emit `newval
+			end
+		end, [args])
+		var rvslp = sl.logprob(currval, [args])
+		return newval, fwdlp, rvslp
+	end
 end
 
 
@@ -170,7 +178,7 @@ function qs.makeRandomChoice(sampleAndLogprob, propose)
 		local ValueType = sl.sample:gettype().returntype
 		local ParamTypes = sl.sample:gettype().parameters
 		-- Parameters that are pointer-to-struct are stored as struct value types
-		local StoredParamTypes = ParamTypes.map(
+		local StoredParamTypes = ParamTypes:map(
 			function(pt) if pt:ispointertostruct() then return pt.type else return pt end)
 		RandomChoiceT.ValueType = ValueType
 		RandomChoiceT.isStructural = isStructural
@@ -187,14 +195,20 @@ function qs.makeRandomChoice(sampleAndLogprob, propose)
 			RandomChoiceT.entries:insert({field=Options.UpperBound, type=real})
 		end
 
-		local function paramFields()
+		local function paramArgList(self)
 			local lst = terralib.newlist()
-			for i=1,#ParamTypes do lst:insert(paramField(i)) end
+			for i=1,#ParamTypes do
+				if ParamTypes[i] == &StoredParamTypes[i] then
+					lst:insert(`&self.[paramField(i)])
+				else
+					lst:insert(`self.[paramField(i)])
+				end
+			end
 			return lst
 		end
 
 		-- Constructor 1: Has an initial value
-		local paramSyms = ParamTypes.map(function(pt) return symbol(pt) end)
+		local paramSyms = ParamTypes:map(function(pt) return symbol(pt) end)
 		local initValSym = symbol(util.isPOD(ValueType) and ValueType or &ValueType)
 		local loHiSyms = terralib.newlist()
 		if hasLowerBound then loHiSyms:insert(symbol(real)) end
@@ -216,8 +230,8 @@ function qs.makeRandomChoice(sampleAndLogprob, propose)
 		end
 
 		-- Constructor 2: Has no initial value
-		paramSyms = ParamTypes.map(function(pt) return symbol(pt) end)
-		oHiSyms = terralib.newlist()
+		paramSyms = ParamTypes:map(function(pt) return symbol(pt) end)
+		loHiSyms = terralib.newlist()
 		if hasLowerBound then loHiSyms:insert(symbol(real)) end
 		if hasUpperBound then loHiSyms:insert(symbol(real)) end
 		terra RandomChoiceT:__init([paramSyms], [loHiSyms]) : {}
@@ -243,21 +257,95 @@ function qs.makeRandomChoice(sampleAndLogprob, propose)
 		end
 
 		-- Update for a new run of the program, checking for changes
-		terra RandomChoiceT:update(????) : {}
-			--
+		paramSyms = ParamTypes:map(function(pt) return symbol(pt) end)
+		loHiSyms = terralib.newlist()
+		if hasLowerBound then loHiSyms:insert(symbol(real)) end
+		if hasUpperBound then loHiSyms:insert(symbol(real)) end
+		terra RandomChoiceT:update([paramSyms], [loHiSyms]) : {}
+			var hasChanges = false
+			escape
+				-- If real is not a primitive float/double type, then we must
+				--    always update everything (otherwise memory bugs...)
+				if not real:isfloat() then
+					hasChanges = true
+					for i=1,#ParamTypes do
+						emit quote
+							S.rundestructor(self.[paramField(i)])
+							S.copy(self.[paramField(i)], [paramSyms[i]])
+						end
+					end
+					if hasLowerBound then
+						emit quote self.[Options.LowerBound] = [loHiSyms[1]] end
+					end
+					if hasUpperBound then
+						emit quote self.[Options.UpperBound] = [loHiSyms[2]] end
+					end
+				-- Otherwise, we only need to copy/rescore if we found something
+				--    that's changed since last time.
+				else
+					for i=1,#ParamTypes do
+						local p = `[paramSyms[i]]
+						-- __eq operator takes value types
+						if ParamTypes[i]:ispointertostruct() then p = `@p end
+						emit quote
+							if not (self.[paramField(i)] == p) then
+								hasChanges = true
+								S.rundestructor(self.[paramField(i)])
+								S.copy(self.[paramField(i)], [paramSyms[i]])
+							end
+						end
+					end
+					if hasLowerBound then
+						emit quote
+							if not (self.[Options.LowerBound] == [loHiSyms[1]]) then
+								hasChanges = true
+								self.[Options.LowerBound] = [loHiSyms[1]]
+							end
+						end
+					end
+					if hasUpperBound then
+						emit quote
+							if not (self.[Options.UpperBound] == [loHiSyms[2]]) then
+								hasChanges = true
+								self.[Options.UpperBound] = [loHiSyms[2]]
+							end
+						end
+					end
+				end
+			end
+			if hasChanges
+				self:rescore()
+			end
 		end
 
 		-- Rescore by recomputing prior logprob
 		terra RandomChoiceT:rescore() : {}
-			-- don't forget to account for lpincr
+			var val = self:getValue()
+			self.logprob = sl.logprob(escape
+				if sl.logprob:gettype().parameters[1] == &ValueType then
+					emit `&val
+				else
+					emit `val
+				end
+			end, [paramArgList(self)]) + lpincr(val, self)
 		end
 
 		-- Propose new value, return fwd/rvs proposal probabilities
 		terra RandomChoiceT:propose() : {real, real}
-			-- TODO: What about making non-POD params pointers?
-			var newval, fwdlp, rvslp = propose(self:getValue(),
-				[paramFields().map(function(f) return `self.[f] end)])
-			-- TODO: finish
+			var fwdlp : real
+			var rvslp : real
+			S.rundestructor(self.value)
+			var val = self:getValue()
+			self.value, fwdlp, rvslp = propose(escape
+				if propose:gettype().parameters[1] == &ValueType then
+					emit `&val
+				else
+					emit `val
+				end
+			end, [paramArgList(self)])
+			self.value = inv(self.value, self)
+			self:rescore()
+			return fwdlp, rvslp
 		end
 
 		-- Get the (transformed) stored value of this random choice
@@ -356,10 +444,6 @@ function qs.makeRandomChoice(sampleAndLogprob, propose)
 	end)
 
 end
-
-
--- TODO:
--- uniform, beta, gamma - when real = num, automatically insert bounds
 
 
 
