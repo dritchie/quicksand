@@ -5,10 +5,17 @@
 local globals = {}
 
 
--- The type of real numbers
--- Defaults to double, but may be changed by the backend
---    to other types, specifically an AD dual number type.
-globals.real = double
+-- Primitive floating point type. Change this for different floating point precision
+globals.primfloat = double
+
+-- Dual number type that replaces primfloat during automatic differentiation (AD)
+-- TODO: Declare this
+globals.dualnum = nil
+
+-- The type of real numbers that a program sees
+-- Either globals.primfloat or globals.dualnum
+-- Defaults to globals.primfloat
+globals.real = globals.primfloat
 
 -- Flags/fields used internally by the backend and not
 --    intended for use by client code.

@@ -274,9 +274,9 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 		terra RandomChoiceT:update([paramSyms], [loHiSyms]) : {}
 			var hasChanges = false
 			escape
-				-- If real is not a primitive float/double type, then we must
+				-- If real is a dual-number type, then we must
 				--    always update everything (otherwise memory bugs...)
-				if not real:isfloat() then
+				if real == globals.dualnum then
 					hasChanges = true
 					for i=1,#ParamTypes do
 						emit quote

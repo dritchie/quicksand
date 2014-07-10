@@ -1,5 +1,6 @@
 local S = terralib.require("lib.std")
 local tmath = terralib.require("lib.math")
+local globals = terralib.require("globals")
 
 -- TODO: Ability to swap out different uniform random number generators
 local CRand = terralib.includecstring [[
@@ -52,9 +53,10 @@ end)
 --------------------------------------------
 
 R.gaussian = S.memoize(function(real)
+	local flt = globals.primfloat
 	return {
 		sample = terra(mu: real, sigma: real) : real
-			var u:double, v:double, x:double, y:double, q:double
+			var u:flt, v:flt, x:flt, y:flt, q:flt
 			repeat
 				u = 1.0 - R.random()
 				v = 1.7156 * (R.random() - 0.5)
@@ -73,7 +75,7 @@ end)
 
 --------------------------------------------
 
-local gamma_cof = global(double[6])
+local gamma_cof = global(globals.primfloat[6])
 local terra init_gamma_cof()
 	gamma_cof = array(76.18009172947146,
 					  -86.50532032941677,
@@ -99,14 +101,15 @@ end)
 
 
 R.gamma = S.memoize(function(real)
+	local flt = globals.primfloat
 	local terra sample(a: real, b: real) : real
 		if a < 1.0 then return sample(1.0+a,b) * tmath.pow(R.random(), 1.0/a) end
-		var x:double, v:real, u:double
+		var x:flt, v:real, u:flt
 		var d = a - 1.0/3.0
 		var c = 1.0/tmath.sqrt(9.0*d)
 		while true do
 			repeat
-				x = [R.gaussian(double)].sample(0.0, 1.0)
+				x = [R.gaussian(flt)].sample(0.0, 1.0)
 				v = 1.0+c*x
 			until v > 0.0
 			v = v*v*v
@@ -164,15 +167,16 @@ R.binomial = S.memoize(function(real)
 	local inv2 = 1/2
 	local inv3 = 1/3
 	local inv6 = 1/6
+	local flt = globals.primfloat
 	return {
 		sample = terra(p: real, n: int) : int
 			var k = 0
 			var N = 10
-			var a:double, b:double
+			var a:flt, b:flt
 			while n > N do
 				a = 1 + n/2
 				b = 1 + n-a
-				var x = [R.beta(double)].sample(a, b)
+				var x = [R.beta(flt)].sample(a, b)
 				if x >= p then
 					n = a - 1
 					p = p / x
@@ -182,7 +186,7 @@ R.binomial = S.memoize(function(real)
 					p = (p-x) / (1.0 - x)
 				end
 			end
-			var u:double
+			var u:flt
 			for i=0,n do
 				u = R.random()
 				if u < p then k = k + 1 end
