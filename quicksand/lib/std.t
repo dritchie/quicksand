@@ -108,6 +108,59 @@ local generateinit = macro(function(self, ...)
 end)
 
 
+
+S.copy = macro(function(self, other)
+    local T = self:gettype()
+    local function hascopy(T)
+        if T:isstruct() then return T:getmethod("copy")
+        elseif T:isarray() then return hascopy(T.type)
+        else return false end
+    end
+    if T:isstruct() and hascopy(T) then
+        return `self:copy(other)
+    elseif T:isarray() and hascopy(T) then
+        return quote
+            var pa = &self
+            for i=0,T.N do
+                S.copy((@pa)[i], other[i])
+            end
+        end
+    end
+    local To = other:gettype()
+    return quote
+        self = [To:ispointertostruct() and (`@other) or other]
+    end
+end)
+
+S.copymembers = macro(function(self, other)
+    local T = self:gettype()
+    local entries = T:getentries()
+    return quote
+        escape
+            for _,e in ipairs(entries) do
+                if e.field then --not a union
+                    emit `S.copy(self.[e.field], other.[e.field])
+                end
+            end
+        end
+    end
+end)
+
+local generatecopy = macro(function(self, other)
+    local T = self:gettype()
+    return quote
+        escape
+            if T.methods.__copy then
+                emit `self:__copy(other)
+            else
+                emit `S.copymembers(self, other)
+            end
+        end
+    end
+end)
+
+
+
 -- standard object metatype
 -- provides T.alloc(), T.salloc(), obj:destruct(), obj:delete()
 -- users should define __destruct if the object has custom destruct behavior
@@ -144,6 +197,13 @@ function S.Object(T)
     terra T:initmembers()
         S.initmembers(@self)
     end
+    terra T:copy(other: &T) : &T
+        generatecopy(@self, other)
+        return self
+    end
+    terra T:copymembers(other: &T)
+        S.copymembers(@self, other)
+    end
 end
 
 
@@ -155,10 +215,10 @@ function S.Vector(T,debug)
     }
     function Vector.metamethods.__typename() return ("Vector(%s)"):format(tostring(T)) end
     local assert = debug and S.assert or macro(function() return quote end end)
-    terra Vector:__init() : &Vector
+    terra Vector:__init() : {}
         self._data,self._size,self._capacity = nil,0,0
     end
-    terra Vector:__init(cap : uint64) : &Vector
+    terra Vector:__init(cap : uint64) : {}
         self:__init()
         self:reserve(cap)
     end
@@ -233,6 +293,22 @@ function S.Vector(T,debug)
         assert(self._size > 0)
         return self:remove(self._size - 1)
     end
+
+    Vector.methods.__copy = terra(self: &Vector, other: &Vector) : {}
+        self:__init(other:size())
+        for i=0,other:size() do
+            self:insert(other(i))
+        end
+    end
+
+    Vector.metamethods.__eq = terra(self: Vector, other: Vector) : bool
+        if self:size() ~= other:size() then return false end
+        for i=0,self:size() do
+            if not (self(i) == other(i)) then return false end
+        end
+        return true
+    end
+    Vector.metamethods.__eq:setinlined(true)
 
     Vector.metamethods.__for = function(syms, iter, body)
         local e = symbol()

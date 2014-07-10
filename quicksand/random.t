@@ -350,12 +350,12 @@ end)
 
 R.dirichlet_vector = S.memoize(function(real)
 	return {
-		sample = terra(params: &S.Vector(real), out: &S.Vector(real)) : {}
-			var outsize = out:size()
-			if outsize ~= params:size() then
-				out:reserve(params:size())
-				for i=outsize,params:size() do out:insert() end
-			end
+		-- NOTE: It is up to the caller to manage the memory of the
+		--    returned vector.
+		sample = terra(params: &S.Vector(real)) : S.Vector(real)
+			var out : S.Vector(real)
+			out:init(params:size())
+			for i=0,params:size() do out:insert() end
 			var ssum = real(0.0)
 			for i=0,params:size() do
 				var t = [R.gamma(real)].sample(params(i), 1.0)
@@ -365,6 +365,7 @@ R.dirichlet_vector = S.memoize(function(real)
 			for i=0,params:size() do
 				out(i) = out(i)/ssum
 			end
+			return out
 		end,
 		logprob = terra(theta: &S.Vector(real), params: &S.Vector(real)) : real
 			var sum = real(0.0)
