@@ -7,7 +7,7 @@ local ERPs = {}
 
 
 ERPs.flip = erp.makeRandomChoice(
-	random.bernoulii,
+	random.bernoulli,
 	S.memoize(function(real)
 		return terra(currval: bool, p: real) : {bool, real, real}
 			if currval then

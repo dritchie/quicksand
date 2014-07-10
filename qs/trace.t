@@ -6,22 +6,36 @@ local util = terralib.require("lib.util")
 -- IMPORTANT: This should record that this program is using this RandomChoice type.
 --            Non-POD values should be returned by pointer
 local function lookupRandomChoice(RandomChoiceT, args, ctoropts, updateopts)
-	-- Just a stub for now
+	-- Just a test stub for now
+	RandomChoiceT.methods.__init:compile()
+	RandomChoiceT.methods.update:compile()
+	RandomChoiceT.methods.rescore:compile()
+	RandomChoiceT.methods.proposal:compile()
 	return quote
-		var x : RandomChoiceT.ValueType
+		var rc : RandomChoiceT
+		rc:init([args], [ctoropts])
+		rc:update([args], [updateopts])
+		var val = rc:getValue()
 	in
-		[util.isPOD(RandomChoiceT.ValueType) and (`x) or (`&x)]
+		[util.isPOD(RandomChoiceT.ValueType) and (`val) or (`&val)]
 	end
 end
 
+-- Just a stub for now
+local factor = macro(function(num)
+	return quote
+		var x = num
+	end
+end)
 
 
 return 
 {
 	lookupRandomChoice = lookupRandomChoice,
+	factor = factor,
 	exports = 
 	{
-		--
+		factor = factor
 	}
 }
 

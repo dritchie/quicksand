@@ -2,6 +2,7 @@ local S = terralib.require("lib.std")
 local tmath = terralib.require("lib.math")
 local util = terralib.require("lib.util")
 local globals = terralib.require("globals")
+local trace = terralib.require("trace")
 
 
 -- The number of parameters required by a random choice
@@ -19,7 +20,7 @@ local function makeDefaultProposal(sl)
 	local currval = symbol(ValType)
 	local params = ParamTypes:map(function(pt) return symbol(pt) end)
 	local SampleValType = sl.sample:gettype().returntype
-	return terra(currval, [params])
+	return terra([currval], [params])
 		var newval = sl.sample([params])
 		var fwdlp = sl.logprob(escape
 			if ValType == &SampleValType then
@@ -27,8 +28,8 @@ local function makeDefaultProposal(sl)
 			else
 				emit `newval
 			end
-		end, [args])
-		var rvslp = sl.logprob(currval, [args])
+		end, [params])
+		var rvslp = sl.logprob(currval, [params])
 		return newval, fwdlp, rvslp
 	end
 end
@@ -39,9 +40,10 @@ end
 -- The following functions assume that the struct is passed in as a 
 --    typed quote.
 local function structHasMember(s, name)
+	if not s then return false end
 	local t = s:gettype()
 	for _,e in ipairs(t.entries) do
-		if e.efield == name then
+		if e.field == name then
 			return true
 		end
 	end
@@ -56,17 +58,19 @@ local Options = {
 }
 -- The Structural option must have a constant (i.e. true or false) value
 local function getStructuralOption(s)
+	-- All variables are structural by default
+	if not s then return true end
 	local t = s:gettype()
 	local index = 0
 	for i,e in ipairs(t.entries) do
-		if e.efield == Options.Structural then
+		if e.field == Options.Structural then
 			index = i
 			break
 		end
 	end
 	if index > 0 then
-		var value = s.tree.expression.expressions[i].value
-		assert(value and (value==true or value==false),
+		local value = s.tree.expression.expressions[index].value
+		assert(value ~= nil and (value==true or value==false),
 			string.format("'%s' option for a random choice must be a boolean constant", Options.Structural))
 		return value
 	else
@@ -104,10 +108,10 @@ local function getBoundState(opts)
 end
 -- We implement bounding via variable transformations
 local logistic = macro(function(x)
-	return `1.0 / (1.0 + ad.math.exp(-x))
+	return `1.0 / (1.0 + tmath.exp(-x))
 end)
 local invlogistic = macro(function(y)
-	return `-ad.math.log(1.0/y - 1.0)
+	return `-tmath.log(1.0/y - 1.0)
 end)
 local function getBoundingTransforms(boundState)
 	local forward = nil
@@ -132,7 +136,7 @@ local function getBoundingTransforms(boundState)
 		end
 		priorincr = function(x, obj) return x end
 	elseif boundState == BoundState.LowerUpper then
-		foward = function(x, obj)
+		forward = function(x, obj)
 			return quote
 				var logit = logistic(x)
 				if x > [-math.huge] and logit == 0.0 then logit = 1e-15 end
@@ -158,14 +162,14 @@ end
 
 
 
-local function makeRandomChoice(sampleAndLogprob, propose)
+local function makeRandomChoice(sampleAndLogprob, proposal)
 
 	-- The RandomChoice struct records the parameters and value of the random choice
 	--    in the execution trace.
 	local RandomChoice = S.memoize(function(real, isStructural, boundState)
 
 		local sl = sampleAndLogprob(real)
-		propose = propose or makeDefaultProposal(sl)
+		local propose = proposal and proposal(real) or makeDefaultProposal(sl)
 		local fwd, inv, lpincr = getBoundingTransforms(boundState)
 
 		local function paramField(i) return string.format("param%d", i) end
@@ -179,7 +183,7 @@ local function makeRandomChoice(sampleAndLogprob, propose)
 		local ParamTypes = sl.sample:gettype().parameters
 		-- Parameters that are pointer-to-struct are stored as struct value types
 		local StoredParamTypes = ParamTypes:map(
-			function(pt) if pt:ispointertostruct() then return pt.type else return pt end)
+			function(pt) if pt:ispointertostruct() then return pt.type else return pt end end)
 		RandomChoiceT.ValueType = ValueType
 		RandomChoiceT.isStructural = isStructural
 		RandomChoiceT.entries:insert({field="value", type=ValueType})
@@ -211,33 +215,37 @@ local function makeRandomChoice(sampleAndLogprob, propose)
 		local paramSyms = ParamTypes:map(function(pt) return symbol(pt) end)
 		local initValSym = symbol(util.isPOD(ValueType) and ValueType or &ValueType)
 		local loHiSyms = terralib.newlist()
-		if hasLowerBound then loHiSyms:insert(symbol(real)) end
-		if hasUpperBound then loHiSyms:insert(symbol(real)) end
-		terra RandomChoiceT:__init([paramSyms], initValSym, [loHiSyms]) : {}
+		local loSym = nil
+		local hiSym = nil
+		if hasLowerBound then loSym = symbol(real); loHiSyms:insert(loSym) end
+		if hasUpperBound then hiSym = symbol(real); loHiSyms:insert(hiSym) end
+		terra RandomChoiceT:__init([paramSyms], [initValSym], [loHiSyms]) : {}
 			escape
 				for i=1,#ParamTypes do
 					emit quote S.copy(self.[paramField(i)], [paramSyms[i]]) end
 				end
 				if hasLowerBound then
-					emit quote self.[Options.LowerBound] = [loHiSyms[1]] end
+					emit quote self.[Options.LowerBound] = [loSym] end
 				end
 				if hasUpperBound then
-					emit quote self.[Options.UpperBound] = [loHiSyms[2]] end
+					emit quote self.[Options.UpperBound] = [hiSym] end
 				end
 			end
-			S.copy(self.value, inv(initValSym, self))
+			S.copy(self.value, [inv(initValSym, self)])
 			self:rescore()
 		end
 
 		-- Constructor 2: Has no initial value
 		paramSyms = ParamTypes:map(function(pt) return symbol(pt) end)
 		loHiSyms = terralib.newlist()
-		if hasLowerBound then loHiSyms:insert(symbol(real)) end
-		if hasUpperBound then loHiSyms:insert(symbol(real)) end
+		loSym = nil
+		hiSym = nil
+		if hasLowerBound then loSym = symbol(real); loHiSyms:insert(loSym) end
+		if hasUpperBound then hiSym = symbol(real); loHiSyms:insert(hiSym) end
 		terra RandomChoiceT:__init([paramSyms], [loHiSyms]) : {}
 			-- Draw a sample, then call the other constructor
 			var sampledval = sl.sample([paramSyms])
-			RandomChoiceT:__init(sampledval, [paramSyms], [loHiSyms])
+			self:__init([paramSyms], sampledval, [loHiSyms])
 		end
 
 		-- Copy constructor
@@ -245,7 +253,7 @@ local function makeRandomChoice(sampleAndLogprob, propose)
 			S.copy(self.value, &other.value)
 			escape
 				for i=1,#ParamTypes do
-					emit quote S.copy(self.[paramFields(i)], &other.[paramFields(i)]) end
+					emit quote S.copy(self.[paramField(i)], &other.[paramField(i)]) end
 				end
 				if hasLowerBound then
 					emit quote self.[Options.LowerBound] = other.[Options.LowerBound] end
@@ -259,8 +267,10 @@ local function makeRandomChoice(sampleAndLogprob, propose)
 		-- Update for a new run of the program, checking for changes
 		paramSyms = ParamTypes:map(function(pt) return symbol(pt) end)
 		loHiSyms = terralib.newlist()
-		if hasLowerBound then loHiSyms:insert(symbol(real)) end
-		if hasUpperBound then loHiSyms:insert(symbol(real)) end
+		loSym = nil
+		hiSym = nil
+		if hasLowerBound then loSym = symbol(real); loHiSyms:insert(loSym) end
+		if hasUpperBound then hiSym = symbol(real); loHiSyms:insert(hiSym) end
 		terra RandomChoiceT:update([paramSyms], [loHiSyms]) : {}
 			var hasChanges = false
 			escape
@@ -275,10 +285,10 @@ local function makeRandomChoice(sampleAndLogprob, propose)
 						end
 					end
 					if hasLowerBound then
-						emit quote self.[Options.LowerBound] = [loHiSyms[1]] end
+						emit quote self.[Options.LowerBound] = [loSym] end
 					end
 					if hasUpperBound then
-						emit quote self.[Options.UpperBound] = [loHiSyms[2]] end
+						emit quote self.[Options.UpperBound] = [hiSym] end
 					end
 				-- Otherwise, we only need to copy/rescore if we found something
 				--    that's changed since last time.
@@ -297,23 +307,23 @@ local function makeRandomChoice(sampleAndLogprob, propose)
 					end
 					if hasLowerBound then
 						emit quote
-							if not (self.[Options.LowerBound] == [loHiSyms[1]]) then
+							if not (self.[Options.LowerBound] == [loSym]) then
 								hasChanges = true
-								self.[Options.LowerBound] = [loHiSyms[1]]
+								self.[Options.LowerBound] = [loSym]
 							end
 						end
 					end
 					if hasUpperBound then
 						emit quote
-							if not (self.[Options.UpperBound] == [loHiSyms[2]]) then
+							if not (self.[Options.UpperBound] == [hiSym]) then
 								hasChanges = true
-								self.[Options.UpperBound] = [loHiSyms[2]]
+								self.[Options.UpperBound] = [hiSym]
 							end
 						end
 					end
 				end
 			end
-			if hasChanges
+			if hasChanges then
 				self:rescore()
 			end
 		end
@@ -327,11 +337,11 @@ local function makeRandomChoice(sampleAndLogprob, propose)
 				else
 					emit `val
 				end
-			end, [paramArgList(self)]) + lpincr(val, self)
+			end, [paramArgList(self)]) + [lpincr(`self.value, self)]
 		end
 
 		-- Propose new value, return fwd/rvs proposal probabilities
-		terra RandomChoiceT:propose() : {real, real}
+		terra RandomChoiceT:proposal() : {real, real}
 			var fwdlp : real
 			var rvslp : real
 			S.rundestructor(self.value)
@@ -343,14 +353,14 @@ local function makeRandomChoice(sampleAndLogprob, propose)
 					emit `val
 				end
 			end, [paramArgList(self)])
-			self.value = inv(self.value, self)
+			self.value = [inv(`self.value, self)]
 			self:rescore()
 			return fwdlp, rvslp
 		end
 
 		-- Get the (transformed) stored value of this random choice
-		RandomChoiceT.methods.getValue() = macro(function()
-			return `fwd(self.value, self)
+		RandomChoiceT.methods.getValue = macro(function(self)
+			return fwd(`self.value, self)
 		end)
 
 
@@ -369,10 +379,10 @@ local function makeRandomChoice(sampleAndLogprob, propose)
 		local sl = sampleAndLogprob(globals.real)
 		local n = getNumParams(sl)
 		local N = #args
-		assert(N == n or N == n+1, "erp.observe - Too many parameters")
+		assert(N == n or N == n+1, "Wrong number of parameters to random choice")
 		local opts = nil
 		if N == n+1 then
-			local opts = args[N]
+			opts = args[N]
 			args[N] = nil
 		end
 		local bs = getBoundState(opts)
@@ -395,7 +405,7 @@ local function makeRandomChoice(sampleAndLogprob, propose)
 		end
 		if structHasMember(opts, Options.UpperBound) then
 			ctoropts:insert((`opts.[Options.UpperBound]))
-			updateopts:insert((`opts.[UpperBound]))
+			updateopts:insert((`opts.[Options.UpperBound]))
 		end
 		---------------------
 		return quote
@@ -407,7 +417,8 @@ local function makeRandomChoice(sampleAndLogprob, propose)
 				S.copy(val, lookupval)
 			else
 				-- Just draw a sample (respect bounds)
-				val = fwd(inv(sl.sample([args]), opts), opts)
+				val = sl.sample([args])
+				val = [fwd(inv(val, opts), opts)]
 			end
 			-- defer destruct if ValType has a destructor
 			escape
@@ -429,17 +440,21 @@ local function makeRandomChoice(sampleAndLogprob, propose)
 		local sl = sampleAndLogprob(globals.real)
 		local n = getNumParams(sl)
 		local N = #args
-		assert(N == n or N == n+1, "erp.observe - Too many parameters")
+		assert(N == n or N == n+1, "Wrong number of parameters to random choice observation")
 		local opts = nil
 		if N == n+1 then
-			local opts = args[N]
+			opts = args[N]
 			args[N] = nil
 		end
 		local fwd, inv, lpincr = getBoundingTransforms(getBoundState(opts))
 		return quote
-			globals.factor(sl.logprob(value, [args]) + lpincr(value, opts))
+			var untransformedVal = [inv(value, opts)]
+			trace.factor(sl.logprob(value, [args]) + [lpincr(untransformedVal, opts)])
 		end
 	end)
+
+
+	return erp
 
 end
 
