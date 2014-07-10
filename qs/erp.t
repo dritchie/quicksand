@@ -1,7 +1,7 @@
 local S = terralib.require("lib.std")
 local tmath = terralib.require("lib.math")
 local util = terralib.require("lib.util")
-local qs = terralib.require("globals")
+local globals = terralib.require("globals")
 
 
 -- The number of parameters required by a random choice
@@ -158,7 +158,7 @@ end
 
 
 
-function qs.makeRandomChoice(sampleAndLogprob, propose)
+local function makeRandomChoice(sampleAndLogprob, propose)
 
 	-- The RandomChoice struct records the parameters and value of the random choice
 	--    in the execution trace.
@@ -366,7 +366,7 @@ function qs.makeRandomChoice(sampleAndLogprob, propose)
 	-- This macro is how the random choice is exposed to client code
 	local erp = macro(function(...)
 		local args = {...}
-		local sl = sampleAndLogprob(qs.real)
+		local sl = sampleAndLogprob(globals.real)
 		local n = getNumParams(sl)
 		local N = #args
 		assert(N == n or N == n+1, "erp.observe - Too many parameters")
@@ -378,7 +378,7 @@ function qs.makeRandomChoice(sampleAndLogprob, propose)
 		local bs = getBoundState(opts)
 		local fwd, inv, lpincr = getBoundingTransforms(bs)
 		local isStructural = getStructuralOption(opts)
-		local RandomChoiceT = RandomChoice(qs.real, isStructural, bs)
+		local RandomChoiceT = RandomChoice(globals.real, isStructural, bs)
 		local ValType = sl.sample:gettype().returntype
 		---------------------
 		-- Options to be passed to the RandomChoice constructor or update method
@@ -400,10 +400,8 @@ function qs.makeRandomChoice(sampleAndLogprob, propose)
 		---------------------
 		return quote
 			var val : ValType
-			if qs.isRecordingTrace then
+			if globals.__compiler.isRecordingTrace then
 				-- Look up value in the currently-executing trace
-				-- IMPORTANT: This should record that this program is using this RandomChoice type.
-				--            Non-POD values should be returned by pointer
 				var lookupval = [trace.lookupRandomChoice(RandomChoiceT, args, ctoropts, updateopts)]
 				-- Copy the value
 				S.copy(val, lookupval)
@@ -428,7 +426,7 @@ function qs.makeRandomChoice(sampleAndLogprob, propose)
 	--    of some random choices, instead of sampling them
 	erp.observe = macro(function(value, ...)
 		local args = {...}
-		local sl = sampleAndLogprob(qs.real)
+		local sl = sampleAndLogprob(globals.real)
 		local n = getNumParams(sl)
 		local N = #args
 		assert(N == n or N == n+1, "erp.observe - Too many parameters")
@@ -439,13 +437,20 @@ function qs.makeRandomChoice(sampleAndLogprob, propose)
 		end
 		local fwd, inv, lpincr = getBoundingTransforms(getBoundState(opts))
 		return quote
-			qs.factor(sl.logprob(value, [args]) + lpincr(value, opts))
+			globals.factor(sl.logprob(value, [args]) + lpincr(value, opts))
 		end
 	end)
 
 end
 
 
-
+return
+{
+	makeRandomChoice = makeRandomChoice,
+	exports = 
+	{
+		makeRandomChoice = makeRandomChoice
+	}
+}
 
 
