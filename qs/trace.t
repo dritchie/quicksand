@@ -3,8 +3,52 @@ local util = terralib.require("lib.util")
 
 
 
+------------------------------------
+---  Trace compilation machinery ---
+------------------------------------
+
 -- The program currently being compiled
 local currentProgram = nil
+
+-- The value of globals.real before compilation was invoked.
+-- We restore this when compilation is finished.
+local prevReal = nil
+
+-- Compiling probabilistic programs proceeds in two passes.
+-- The first pass detects the types of all random choices used in the program.
+-- This flag indicates whether we are in the first pass.
+local rcTypeDetectionPass = false
+
+-- This is where we record the types of all random choices used.
+local rcTypesUsed = {}
+
+-- Signalling functions exposed to code in other files
+local compilation = {}
+function compilation.isCompiling()
+	return currentProgram ~= nil
+end
+function compilation.currentlyCompilingProgram()
+	return currentProgram
+end
+function compilation.beginCompilation(program, real)
+	currentProgram = program
+	prevReal = globals.real
+	globals.real = real
+end
+function compilation.beginRCTypeDetectionPass()
+	rcTypesUsed = {}
+	rcTypeDetectionPass = true
+end
+function compilation.endRCTypeDetectionPass()
+	rcTypeDetectionPass = false
+end
+function compilation.endCompilation()
+	currentProgram = nil
+	globals.real = prevReal
+end
+
+------------------------------------
+
 
 -- Set to true during a trace update
 local isRecordingTrace = global(bool, false)
@@ -46,8 +90,9 @@ end)
 
 return 
 {
-	currentProgram = currentProgram,
+	compilation = compilation,
 	isRecordingTrace = isRecordingTrace,
+	canStructureChange = canStructureChange,
 	lookupRandomChoice = lookupRandomChoice,
 	factor = factor,
 	exports = 
