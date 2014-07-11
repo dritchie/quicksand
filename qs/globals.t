@@ -17,21 +17,6 @@ globals.dualnum = nil
 -- Defaults to globals.primfloat
 globals.real = globals.primfloat
 
--- Flags/fields used internally by the backend and not
---    intended for use by client code.
-globals.__compiler = {
-	
-	-- The program currently being compiled
-	currentProgram = nil,
-
-	-- Set to true during a trace update
-	isRecordingTrace = global(bool, false),
-
-	-- Set to false during a trace update where control flow structure
-	--    is known to be fixed. 
-	canStructureChange = global(bool, true)
-
-}
 
 return globals
 

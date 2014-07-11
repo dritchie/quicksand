@@ -1,7 +1,7 @@
 local S = terralib.require("lib.std")
 local erp = terralib.require("erp")
 local distrib = terralib.require("distrib")
-local tmath = terralib.require("lib.math")
+local tmath = terralib.require("tmath")
 local globals = terralib.require("globals")
 
 

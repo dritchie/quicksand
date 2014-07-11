@@ -1,5 +1,5 @@
 local S = terralib.require("lib.std")
-local tmath = terralib.require("lib.math")
+local tmath = terralib.require("tmath")
 local globals = terralib.require("globals")
 
 -- TODO: Ability to swap out different uniform random number generators

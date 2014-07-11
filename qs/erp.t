@@ -1,5 +1,5 @@
 local S = terralib.require("lib.std")
-local tmath = terralib.require("lib.math")
+local tmath = terralib.require("tmath")
 local util = terralib.require("lib.util")
 local globals = terralib.require("globals")
 local trace = terralib.require("trace")
@@ -413,7 +413,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 		---------------------
 		return quote
 			var val : ValType
-			if globals.__compiler.isRecordingTrace then
+			if trace.isRecordingTrace then
 				-- Look up value in the currently-executing trace
 				var lookupval = [trace.lookupRandomChoice(RandomChoiceT, args, ctoropts, updateopts)]
 				-- Copy the value
