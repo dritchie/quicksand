@@ -102,10 +102,10 @@ end)
 
 R.gamma = S.memoize(function(real)
 	local flt = globals.primfloat
-	local terra sample(a: real, b: real) : real
-		if a < 1.0 then return sample(1.0+a,b) * tmath.pow(R.random(), 1.0/a) end
+	local terra sample(shape: real, scale: real) : real
+		if shape < 1.0 then return sample(1.0+shape,scale) * tmath.pow(R.random(), 1.0/shape) end
 		var x:flt, v:real, u:flt
-		var d = a - 1.0/3.0
+		var d = shape - 1.0/3.0
 		var c = 1.0/tmath.sqrt(9.0*d)
 		while true do
 			repeat
@@ -115,14 +115,14 @@ R.gamma = S.memoize(function(real)
 			v = v*v*v
 			u = R.random()
 			if (u < 1.0 - .331*x*x*x*x) or (tmath.log(u) < .5*x*x + d*(1.0 - v + tmath.log(v))) then
-				return b*d*v
+				return scale*d*v
 			end
 		end
 	end
 	return {
 		sample = sample,
-		logprob = terra(x: real, a: real, b: real) : real
-			return (a - 1.0)*tmath.log(x) - x/b - [log_gamma(real)](a) - a*tmath.log(b)
+		logprob = terra(x: real, shape: real, scale: real) : real
+			return (shape - 1.0)*tmath.log(x) - x/scale - [log_gamma(real)](shape) - shape*tmath.log(scale)
 		end
 	}
 end)
@@ -267,31 +267,33 @@ end)
 
 --------------------------------------------
 
-R.multinomial_array = S.memoize(function(real, N)
-	return {
-		sample = terra(params: real[N]) : int
-			var sum = real(0.0)
-			for i=0,N do sum = sum + params[i] end
-			var result: int = 0
-			var x = R.random() * sum
-			var probAccum = real(0.0)
-			repeat
-				probAccum = probAccum + params[result]
-				result = result + 1
-			until probAccum > x or result == N
-			return result - 1
-		end,
-		logprob = terra(val: int, params: real[N]) : real
-			if val < 0 or val >= N then
-				return [-math.huge]
+R.multinomial_array = S.memoize(function(N)
+	return S.memoize(function(real)
+		return {
+			sample = terra(params: real[N]) : int
+				var sum = real(0.0)
+				for i=0,N do sum = sum + params[i] end
+				var result: int = 0
+				var x = R.random() * sum
+				var probAccum = real(0.0)
+				repeat
+					probAccum = probAccum + params[result]
+					result = result + 1
+				until probAccum > x or result == N
+				return result - 1
+			end,
+			logprob = terra(val: int, params: real[N]) : real
+				if val < 0 or val >= N then
+					return [-math.huge]
+				end
+				var sum = real(0.0)
+				for i=0,N do
+					sum = sum + params[i]
+				end
+				return tmath.log(params[val]/sum)
 			end
-			var sum = real(0.0)
-			for i=0,N do
-				sum = sum + params[i]
-			end
-			return tmath.log(params[val]/sum)
-		end
-	}
+		}
+	end)
 end)
 
 R.multinomial_vector = S.memoize(function(real)
@@ -323,33 +325,35 @@ end)
 
 --------------------------------------------
 
-R.dirichlet_array = S.memoize(function(real, N)
-	return {
-		sample = terra(params: real[N]) : real[N]
-			var out : real[N]
-			var ssum = real(0.0)
-			for i=0,N do
-				var t = [R.gamma(real)].sample(params[i], 1.0)
-				out[i] = t
-				ssum = ssum + t
+R.dirichlet_array = S.memoize(function(N)
+	return S.memoize(function(real)
+		return {
+			sample = terra(params: real[N]) : real[N]
+				var out : real[N]
+				var ssum = real(0.0)
+				for i=0,N do
+					var t = [R.gamma(real)].sample(params[i], 1.0)
+					out[i] = t
+					ssum = ssum + t
+				end
+				for i=0,N do
+					out[i] = out[i]/ssum
+				end
+				return out
+			end,
+			logprob = terra(theta: real[N], params: real[N]) : real
+				var sum = real(0.0)
+				for i=0,N do sum = sum + params[i] end
+				var logp = [log_gamma(real)](sum)
+				for i=0,N do
+					var a = params[i]
+					logp = logp + (a - 1.0)*tmath.log(theta[i])
+					logp = logp - [log_gamma(real)](a)
+				end
+				return logp
 			end
-			for i=0,N do
-				out[i] = out[i]/ssum
-			end
-			return out
-		end,
-		logprob = terra(theta: real[N], params: real[N]) : real
-			var sum = real(0.0)
-			for i=0,N do sum = sum + params[i] end
-			var logp = [log_gamma(real)](sum)
-			for i=0,N do
-				var a = params[i]
-				logp = logp + (a - 1.0)*tmath.log(theta[i])
-				logp = logp - [log_gamma(real)](a)
-			end
-			return logp
-		end
-	}
+		}
+	end)
 end)
 
 R.dirichlet_vector = S.memoize(function(real)

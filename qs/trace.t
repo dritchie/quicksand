@@ -3,6 +3,7 @@ local util = terralib.require("lib.util")
 
 
 -- Look up random choice value in the currently-executing trace
+-- (Does address stack management...)
 -- IMPORTANT: This should record that this program is using this RandomChoice type.
 --            Non-POD values should be returned by pointer
 local function lookupRandomChoice(RandomChoiceT, args, ctoropts, updateopts)
@@ -14,7 +15,7 @@ local function lookupRandomChoice(RandomChoiceT, args, ctoropts, updateopts)
 	return quote
 		var rc : RandomChoiceT
 		rc:init([args], [ctoropts])
-		rc:update([args], [updateopts])
+		-- rc:update([args], [updateopts])
 		var val = rc:getValue()
 	in
 		[util.isPOD(RandomChoiceT.ValueType) and (`val) or (`&val)]

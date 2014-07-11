@@ -35,6 +35,21 @@ function isPOD(typ)
 end
 U.isPOD = isPOD
 
+-- Equality comparison that also handles arrays
+local equal
+equal = macro(function(a, b)
+	local A = a:gettype()
+	local B = b:gettype()
+	if A:isarray() or B:isarray() then
+		if A ~= B then return false end
+		local expr = `equal(a[0], b[0])
+		for i=1,A.N-1 do expr = (`expr and equal(a[ [i] ], b[ [i] ])) end
+		return expr
+	end
+	return `a == b
+end)
+U.equal = equal
+
 return U
 
 

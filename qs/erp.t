@@ -113,11 +113,12 @@ end)
 local invlogistic = macro(function(y)
 	return `-tmath.log(1.0/y - 1.0)
 end)
-local function getBoundingTransforms(boundState)
+local function getBoundingTransforms(boundState, real)
 	local forward = nil
 	local inverse = nil
 	local priorincr = nil
-	if boundState == BoundState.None then
+	-- Bounds only take effect when we're doing HMC w/ AD
+	if (real ~= globals.dualnum) or (boundState == BoundState.None) then
 		forward = function(x, obj) return x end
 		inverse = function(y, obj) return y end
 		priorincr = function(x, obj) return `0.0 end
@@ -170,7 +171,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 
 		local sl = sampleAndLogprob(real)
 		local propose = proposal and proposal(real) or makeDefaultProposal(sl)
-		local fwd, inv, lpincr = getBoundingTransforms(boundState)
+		local fwd, inv, lpincr = getBoundingTransforms(boundState, real)
 
 		local function paramField(i) return string.format("param%d", i) end
 
@@ -187,7 +188,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 		RandomChoiceT.ValueType = ValueType
 		RandomChoiceT.isStructural = isStructural
 		RandomChoiceT.entries:insert({field="value", type=ValueType})
-		for i,spt in ipairs(ParamTypes) do
+		for i,spt in ipairs(StoredParamTypes) do
 			RandomChoiceT.entries:insert({field=paramField(i), type=spt})
 		end
 		local hasLowerBound = (boundState == BoundState.Lower or boundState == BoundState.LowerUpper)
@@ -245,7 +246,9 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 		terra RandomChoiceT:__init([paramSyms], [loHiSyms]) : {}
 			-- Draw a sample, then call the other constructor
 			var sampledval = sl.sample([paramSyms])
-			self:__init([paramSyms], sampledval, [loHiSyms])
+			self:__init([paramSyms],
+				        [util.isPOD(ValueType) and sampledval or (`&sampledval)],
+				        [loHiSyms])
 		end
 
 		-- Copy constructor
@@ -298,7 +301,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 						-- __eq operator takes value types
 						if ParamTypes[i]:ispointertostruct() then p = `@p end
 						emit quote
-							if not (self.[paramField(i)] == p) then
+							if not util.equal(self.[paramField(i)], p) then
 								hasChanges = true
 								S.rundestructor(self.[paramField(i)])
 								S.copy(self.[paramField(i)], [paramSyms[i]])
@@ -386,7 +389,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 			args[N] = nil
 		end
 		local bs = getBoundState(opts)
-		local fwd, inv, lpincr = getBoundingTransforms(bs)
+		local fwd, inv, lpincr = getBoundingTransforms(bs, globals.real)
 		local isStructural = getStructuralOption(opts)
 		local RandomChoiceT = RandomChoice(globals.real, isStructural, bs)
 		local ValType = sl.sample:gettype().returntype
@@ -446,7 +449,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 			opts = args[N]
 			args[N] = nil
 		end
-		local fwd, inv, lpincr = getBoundingTransforms(getBoundState(opts))
+		local fwd, inv, lpincr = getBoundingTransforms(getBoundState(opts), globals.real)
 		return quote
 			var untransformedVal = [inv(value, opts)]
 			trace.factor(sl.logprob(value, [args]) + [lpincr(untransformedVal, opts)])
@@ -462,10 +465,13 @@ end
 return
 {
 	makeRandomChoice = makeRandomChoice,
+	Options = Options,
+	structHasMember = structHasMember,
 	exports = 
 	{
 		makeRandomChoice = makeRandomChoice
 	}
 }
+
 
 
