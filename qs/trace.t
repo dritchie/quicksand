@@ -1,6 +1,7 @@
 local S = terralib.require("lib.std")
 local globals = terralib.require("globals")
 local util = terralib.require("lib.util")
+local Hash = terralib.require("lib.hash")
 local HashMap = terralib.require("lib.hashmap")
 
 
@@ -55,6 +56,12 @@ end
 ---  Random execution trace type  ---
 -------------------------------------
 
+local Address = S.Vector(int)
+local terra hashAddress(addr: Address)
+	return Hash.rawhash([&int8](addr:get(0)), sizeof(int)*addr:size())
+end
+hashAddress:setinlined(true)
+
 -- Database of values for a particular type of random choice
 local RandomDB = S.memoize(function(RandomChoiceT)
 
@@ -96,7 +103,7 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 		--    after a structure change, we can re-order the memory pool by linear program
 		--    occurrence order so that we get greater cache coherence when accessing random
 		--    choices via the flat list.
-		choicemap: HashMap(Address, ChoicesWithCounter),
+		choicemap: HashMap(Address, ChoicesWithCounter, hashAddress),
 		choicelist: ChoicePointersWithCounter
 	}
 
@@ -469,16 +476,18 @@ local function lookupRandomChoiceValue(RandomChoiceT, args, ctoropts, updateopts
 		-- Only proceed with trace lookup if we're past the type detection pass
 		escape
 			if not rcTypeDetectionPass then
-				var rc, foundit = [globalTrace()]:lookupRandomChoice(RandomChoiceT, [args], [ctoropts])
-				-- If this choice was retrieved, not created, then we should check if
-				--    the prior probability etc. need to be updated
-				if foundit then
-					rc:update([args], [updateopts])
-				end
-				-- Regardless, we need to increment the trace's log probability
-				[globalTrace()].logprob = [globalTrace()].logprob + rc.logprob
+				emit quote
+					var rc, foundit = [globalTrace()]:lookupRandomChoice(RandomChoiceT, [args], [ctoropts])
+					-- If this choice was retrieved, not created, then we should check if
+					--    the prior probability etc. need to be updated
+					if foundit then
+						rc:update([args], [updateopts])
+					end
+					-- Regardless, we need to increment the trace's log probability
+					[globalTrace()].logprob = [globalTrace()].logprob + rc.logprob
 
-				val = rc:getValue()
+					val = rc:getValue()
+				end
 			end
 		end
 	in

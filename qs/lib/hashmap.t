@@ -9,9 +9,9 @@ local expandFactor = 2
 local loadFactor = 2.0
 
 
-local HM = S.memoize(function(K, V)
+local HM = S.memoize(function(K, V, hashfn)
 
-	local hashfn = hash.gethashfn(K)
+	hashfn = hashfn or hash.gethashfn(K)
 
 	local struct HashCell(S.Object)
 	{
@@ -84,7 +84,7 @@ local HM = S.memoize(function(K, V)
 	terra HashMap:getPointer(key: K)
 		var cell = self.__cells[self:hash(key)]
 		while cell ~= nil do
-			if cell.key == key then
+			if util.equal(cell.key, key) then
 				return &cell.val
 			end
 			cell = cell.next
@@ -103,7 +103,7 @@ local HM = S.memoize(function(K, V)
 		var index = self:hash(key)
 		var cell = self.__cells[index]
 		while cell ~= nil do
-			if cell.key == key then
+			if util.equal(cell.key, key) then
 				return &cell.val, true
 			end
 			cell = cell.next
@@ -177,7 +177,7 @@ local HM = S.memoize(function(K, V)
 			-- its value
 			var origcell = cell
 			while cell ~= nil do
-				if cell.key == key then
+				if util.equal(cell.key, key) then
 					S.rundestructor(cell.val)
 					cell.val = val
 					return
@@ -199,7 +199,7 @@ local HM = S.memoize(function(K, V)
 		var cell = self.__cells[index]
 		var prevcell : &HashCell = nil
 		while cell ~= nil do
-			if cell.key == key then
+			if util.equal(cell.key, key) then
 				-- CASE: Found it in the first cell
 				if prevcell == nil then
 					self.__cells[index] = cell.next
