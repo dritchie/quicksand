@@ -1,7 +1,7 @@
+local util = terralib.require("qs.lib.util")
 
-local hash = terralib.require("hash")
-local util = terralib.require("util")
-local S = terralib.require("std")
+local hash = util.require("hash")
+local S = util.require("std")
 
 
 local defaultInitialCapacity = 8

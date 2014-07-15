@@ -1,6 +1,8 @@
-local S = terralib.require("lib.std")
-local tmath = terralib.require("tmath")
-local globals = terralib.require("globals")
+local util = terralib.require("qs.lib.util")
+
+local S = util.require("lib.std")
+local tmath = util.require("tmath")
+local globals = util.require("globals")
 
 -- TODO: Ability to swap out different uniform random number generators
 local CRand = terralib.includecstring [[

@@ -1,7 +1,8 @@
+local util = terralib.require("qs.lib.util")
+
 local thisfile = debug.getinfo(1, "S").source:gsub("@", "")
-local util = terralib.require("util")
 local fasthash = util.includec_path(thisfile:gsub("hash.t", "fasthash.h")).SuperFastHash
-local S = terralib.require("std")
+local S = util.require("std")
 
 local C = terralib.includecstring [[
 #include <string.h>

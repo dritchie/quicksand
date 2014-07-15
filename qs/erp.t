@@ -1,8 +1,9 @@
-local S = terralib.require("lib.std")
-local tmath = terralib.require("tmath")
-local util = terralib.require("lib.util")
-local globals = terralib.require("globals")
-local trace = terralib.require("trace")
+local util = terralib.require("qs.lib.util")
+
+local S = util.require("lib.std")
+local tmath = util.require("tmath")
+local globals = util.require("globals")
+local trace = util.require("trace")
 
 
 -- The number of parameters required by a random choice

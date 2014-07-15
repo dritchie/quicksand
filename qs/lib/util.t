@@ -49,6 +49,24 @@ equal = macro(function(a, b)
 end)
 U.equal = equal
 
+local function stringsplit(self, sep)
+    local sep, fields = sep or ":", {}
+    local pattern = string.format("([^%s]+)", sep)
+    self:gsub(pattern, function(c) fields[#fields+1] = c end)
+    return fields
+end
+function U.require(name)
+	local callermodule = debug.getinfo(2, "S").source:gsub("@", ""):gsub("%.t", "")
+	local parts = stringsplit(callermodule, "/")
+	local path = name
+	if #parts > 1 then
+		path = parts[1]
+		for i=2,#parts-1 do path = string.format("%s.%s", path, parts[i]) end
+		path = string.format("%s.%s", path, name)
+	end
+	return terralib.require(path)
+end
+
 return U
 
 

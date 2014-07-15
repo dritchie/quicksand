@@ -1,8 +1,10 @@
-local S = terralib.require("lib.std")
-local erp = terralib.require("erp")
-local distrib = terralib.require("distrib")
-local tmath = terralib.require("tmath")
-local globals = terralib.require("globals")
+local util = terralib.require("qs.lib.util")
+
+local S = util.require("lib.std")
+local erp = util.require("erp")
+local distrib = util.require("distrib")
+local tmath = util.require("tmath")
+local globals = util.require("globals")
 
 
 

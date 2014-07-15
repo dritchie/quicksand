@@ -1,8 +1,9 @@
-local S = terralib.require("lib.std")
-local globals = terralib.require("globals")
-local util = terralib.require("lib.util")
-local Hash = terralib.require("lib.hash")
-local HashMap = terralib.require("lib.hashmap")
+local util = terralib.require("qs.lib.util")
+
+local S = util.require("lib.std")
+local globals = util.require("globals")
+local Hash = util.require("lib.hash")
+local HashMap = util.require("lib.hashmap")
 
 
 
@@ -76,9 +77,10 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 	end
 
 	local struct ChoicePointersWithCounter(S.Object)
+	{
 		pointers: S.Vector(&RandomChoiceT),
 		counter: uint64
-	end
+	}
 	terra ChoicePointersWithCounter:__init()
 		self:initmembers()
 		self.counter = 0
