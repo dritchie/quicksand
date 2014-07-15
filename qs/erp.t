@@ -178,13 +178,22 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 		-- Declare struct type and add members for value, params, and bounds (if needed)
 		local struct RandomChoiceT(S.Object)
 		{
-			logprob: real
+			logprob: real,
+			active: bool
 		}
 		local ValueType = sl.sample:gettype().returntype
 		local ParamTypes = sl.sample:gettype().parameters
 		-- Parameters that are pointer-to-struct are stored as struct value types
-		local StoredParamTypes = ParamTypes:map(
-			function(pt) if pt:ispointertostruct() then return pt.type else return pt end end)
+		local StoredParamTypes = ParamTypes:map(function(pt) if pt:ispointertostruct() then return pt.type else return pt end end)
+		-- We also verify that any non-POD parameter types have a __copy method
+		--    (otherwise memory bugs will arise)
+		for _,spt in ipairs(StoredParamTypes) do
+			if not util.isPOD(spt) then
+				assert(spt:getmethod("copy"),
+					"Non-POD parameters to a random choice must have a 'copy' initialization method")
+			end
+		end
+		RandomChoiceT.RealType = real
 		RandomChoiceT.ValueType = ValueType
 		RandomChoiceT.isStructural = isStructural
 		RandomChoiceT.entries:insert({field="value", type=ValueType})
@@ -234,6 +243,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 			end
 			S.copy(self.value, [inv(initValSym, self)])
 			self:rescore()
+			self.active = true
 		end
 
 		-- Constructor 2: Has no initial value
@@ -329,6 +339,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 			if hasChanges then
 				self:rescore()
 			end
+			self.active = true
 		end
 
 		-- Rescore by recomputing prior logprob
@@ -413,9 +424,9 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 		---------------------
 		return quote
 			var val : ValType
-			if trace.isRecordingTrace then
+			if [trace.isRecordingTrace()] then
 				-- Look up value in the currently-executing trace
-				var lookupval = [trace.lookupRandomChoice(RandomChoiceT, args, ctoropts, updateopts)]
+				var lookupval = [trace.lookupRandomChoiceValue(RandomChoiceT, args, ctoropts, updateopts)]
 				-- Copy the value
 				S.copy(val, lookupval)
 			else

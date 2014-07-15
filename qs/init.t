@@ -18,7 +18,8 @@ end
 addExports(
 	"erp",
 	"erpdefs",
-	"trace"
+	"trace",
+	"progmodule"
 	-- TODO: add more files
 )
 

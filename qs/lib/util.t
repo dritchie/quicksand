@@ -5,7 +5,6 @@ function U.includec_path(filename)
 	return terralib.includec(filename, "-I", cpath)
 end
 
--- Cross platform
 U.fatalError = macro(function(...)
 	local args = {...}
 	return quote

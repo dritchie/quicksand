@@ -294,6 +294,14 @@ function S.Vector(T,debug)
         return self:remove(self._size - 1)
     end
 
+    terra Vector:clear() : {}
+        assert(self._capacity >= self._size)
+        for i = 0ULL,self._size do
+            S.rundestructor(self._data[i])
+        end
+        self._size = 0
+    end
+
     Vector.methods.__copy = terra(self: &Vector, other: &Vector) : {}
         self:__init(other:size())
         for i=0,other:size() do
