@@ -135,11 +135,8 @@ local HM = S.memoize(function(K, V, hashfn)
 	-- Does not copy the return value
 	HashMap.metamethods.__apply = terra(self: &HashMap, key: K)
 		var vptr = self:getPointer(key)
-		if vptr == nil then
-			util.fatalError("HashMap() - key does not exist!\n")
-		else
-			return @vptr
-		end
+		S.assert(vptr ~= nil, "HashMap() - key does not exist!\n"))
+		return @vptr
 	end
 
 	-- Expand and rehash

@@ -72,6 +72,11 @@ local function isprogram(x)
 	return getmetatable(x) == programmt
 end
 
+local function assertIsProgram(program, caller)
+	assert(isprogram(program),
+		string.format("'program' argument to '%s' must be a qs.program", caller))
+end
+
 
 
 -- A module encapsulates (potentially probabilistic) code
@@ -166,6 +171,7 @@ return
 {
 	program = program,
 	isprogram = isprogram,
+	assertIsProgram = assertIsProgram,
 	module = module,
 	ismodule = ismodule,
 	exports = 

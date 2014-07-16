@@ -1,7 +1,9 @@
+local util = terralib.require("qs.lib.util")
+local S = util.require("lib.std")
 
 -- Globally-available stuff
 -- This will form the set of methods/types that get exported
---    as the 'quicksand' package
+--    as the 'qs' package
 local globals = {}
 
 
@@ -16,6 +18,21 @@ globals.dualnum = nil
 -- Either globals.primfloat or globals.dualnum
 -- Defaults to globals.primfloat
 globals.real = globals.primfloat
+
+-- A sample drawn from a probabilistic program.
+-- Just bundles a program return value with a log probability (score).
+globals.Sample = S.memoize(function(T)
+	local struct Sample(S.Object)
+	{
+		value: T,
+		logprob: globals.primfloat
+	}
+	terra Sample:__init(val: T, lp: globals.primfloat)
+		self.value = T
+		self.logprob = lp
+	end
+	return Sample
+end)
 
 
 return globals
