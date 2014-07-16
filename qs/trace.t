@@ -202,6 +202,13 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 
 end)
 
+
+-- We create one global pointer variable for every type of trace that gets created
+-- When doing inference, the appropriate one of these points to the 'currently executing trace'
+-- (This is a map from trace type to global pointer variable)
+local globalTracePointers = {}
+
+
 -- The trace type itself
 local RandExecTrace = S.memoize(function(program, real)
 
@@ -237,6 +244,11 @@ local RandExecTrace = S.memoize(function(program, real)
 	local function rdbForType(self, RCType)
 		return `self.[string.format("rdb%d", rcTypeIndices[RCType])]
 	end
+
+	-- Create the global pointer variable for this trace type
+	local gTrace = global(&RandExecTraceT, nil)
+	globalTracePointers[RandExecTraceT] = gTrace
+
 
 	terra RandExecTraceT:__init()
 		self.logprob = 0.0
@@ -291,8 +303,10 @@ local RandExecTrace = S.memoize(function(program, real)
 
 	-- Also returns a boolean indicating whether the random choice was
 	--    retrieved or created.
-	RandExecTraceT.methods.lookupRandomChoice = macro(function(RCType, ...)
-		local initArgs = terralib.newlist({...})
+	RandExecTraceT.lookupRandomChoice = function(self, RCType, args, ctoropts)
+		local initArgs = terralib.newlist()
+		for _,a in ipairs(args) do initArgs:insert(a) end
+		for _,a in ipairs(ctoropts) do initArgs:insert(a) end
 		local initArgsTmp = initArgs:map(function(a) return symbol(a:gettype()) end)
 		return quote
 			var x : &RCType
@@ -308,14 +322,14 @@ local RandExecTrace = S.memoize(function(program, real)
 		in
 			x, foundit
 		end
-	end)
+	end
 
 	terra RandExecTraceT:update(canStructureChange: bool)
 		self.canStructureChange = canStructureChange
 
 		-- Assume ownership of the global trace
-		var prevTrace = [globalTrace()]
-		[globalTrace()] = self
+		var prevTrace = gTrace
+		gTrace = self
 
 		self.logprob = 0.0
 		self.newlogprob = 0.0
@@ -348,22 +362,28 @@ local RandExecTrace = S.memoize(function(program, real)
 		end
 
 		-- Release ownership of global trace
-		[globalTrace()] = prevTrace
+		gTrace = prevTrace
 	end
 
 	return RandExecTraceT
 
 end)
 
--- Create or retrieve a global variable pointing to the
---    currently executing trace for a particular program type.
-local __globalTrace = S.memoize(function(program, real)
-	return global(&RandomChoice(program, real), nil)
-end)
-local function globalTrace()
+
+local function GlobalTraceType()
 	assert(currentProgram,
-		"Cannot call 'globalTrace' outside of trace compilation")
-	return __globalTrace(currentProgram, globals.real)
+		"Cannot call 'globalTrace()' outside of trace compilation")
+	return RandExecTrace(currentProgram, globals.real)
+end
+
+-- Retrieve a global variable pointing to the currently executing trace for
+--    a particular program type.
+local function globalTrace()
+	local RandExecTraceT = GlobalTraceType()
+	local gTrace = globalTracePointers[RandExecTraceT]
+	assert(gTrace,
+		"'globalTrace()'' could not find a global trace pointer for the current program trace type. This should be impossible...")
+	return gTrace
 end
 
 -- Check whether the current execution of the program is a trace recording
@@ -473,26 +493,45 @@ local function lookupRandomChoiceValue(RandomChoiceT, args, ctoropts, updateopts
 	if rcTypeDetectionPass then
 		rcTypesUsed:insert(RandomChoiceT)
 	end
+	local ValType = RandomChoiceT.ValueType
 	return quote
-		var val : RandomChoiceT.ValueType
+		var val : ValType
 		-- Only proceed with trace lookup if we're past the type detection pass
 		escape
 			if not rcTypeDetectionPass then
 				emit quote
-					var rc, foundit = [globalTrace()]:lookupRandomChoice(RandomChoiceT, [args], [ctoropts])
-					-- If this choice was retrieved, not created, then we should check if
-					--    the prior probability etc. need to be updated
-					if foundit then
-						rc:update([args], [updateopts])
-					end
-					-- Regardless, we need to increment the trace's log probability
-					[globalTrace()].logprob = [globalTrace()].logprob + rc.logprob
+					-- If we're currently in a trace update execution, look up the choice value from the
+					--    currently-executing trace.
+					if [isRecordingTrace()] then
+						-- var rc, foundit = [globalTrace()]:lookupRandomChoice(RandomChoiceT, [args], [ctoropts])
+						var rc, foundit = [GlobalTraceType().lookupRandomChoice(globalTrace(), RandomChoiceT, args, ctoropts)]
+						-- If this choice was retrieved, not created, then we should check if
+						--    the prior probability etc. need to be updated
+						if foundit then
+							rc:update([args], [updateopts])
+						end
+						-- Regardless, we need to increment the trace's log probability
+						[globalTrace()].logprob = [globalTrace()].logprob + rc.logprob
 
-					val = rc:getValue()
+						-- Retrieve and copy the value of the random choice we found/created
+						var gotval = rc:getValue()
+						S.copy(val, gotval)
+					else
+						-- If this is not part of a trace execution, just draw a forward sample
+						val = [RandomChoiceT.sampleFunction]([args])
+					end
+					-- defer destruct if ValueType has a destructor
+					escape
+						if ValType:isstruct() and ValType:getmethod("destruct") then
+							emit quote defer val:destruct() end
+						end
+					end
 				end
 			end
 		end
 	in
+		-- Return pointer-to-struct, in keeping with salloc() convention,
+		--    if ValType is non-POD
 		[util.isPOD(RandomChoiceT.ValueType) and (`val) or (`&val)]
 	end
 end
@@ -589,7 +628,6 @@ range:setinlined(true)
 return 
 {
 	compilation = compilation,
-	isRecordingTrace = isRecordingTrace,
 	lookupRandomChoiceValue = lookupRandomChoiceValue,
 	factor = factor,
 	exports = 

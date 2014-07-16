@@ -9,12 +9,15 @@ local globals = util.require("globals")
 -- It wraps up a Lua function that encapsulates and returns a Terra function.
 -- Its one function, 'compile', compiles and returns the program for the given
 --    choice of real (optional) as well as the return type of the program
+
 local progcompile = S.memoize(function(self, real)
+
 	trace.compilation.beginCompilation(self, real)
+
 	-- Do a first compilation pass that detects
 	--    the types of all random choices used in the program.
 	trace.compilation.beginRCTypeDetectionPass()
-	local tfn = self.specializationFn()
+	local tfn = self.specializationFn(self, real, true)
 	if not terralib.isfunction(tfn) then
 		error("Lua function passed to a qs.program must return a Terra function")
 	end
@@ -25,14 +28,17 @@ local progcompile = S.memoize(function(self, real)
 	end
 	local RetType = T.returntype
 	trace.compilation.endRCTypeDetectionPass()
+
 	-- Now, compile the actual program.
 	-- ABSOLUTELY MUST be done asynchronously, since compiling
 	--    the program requires us to compile a trace type, but
 	--    compiling the trace type requires us to compile the program...
-	tfn = self.specializationFn()
+	local tfn = self.specializationFn(self, real, false)
 	tfn:compile(function() trace.compilation.endCompilation() end)
+
 	return { prog=tfn, RetType=RetType }
 end)
+
 local programmt =
 {
 	compile = function(self, optreal)
@@ -41,17 +47,22 @@ local programmt =
 		return progAndRetType.prog, progAndRetType.RetType
 	end
 }
+programmt.__index = programmt
+
 local function program(luafn)
 	if type(luafn) ~= "function" then
 		error("Argument to a qs.program must be a Lua function")
 	end
 	local progobj = 
 	{
-		specializationFn = luafn
+		specializationFn = S.memoize(function(prog, real, isTypeDetectPass)
+			return luafn()
+		end)
 	}
 	setmetatable(progobj, programmt)
 	return progobj
 end
+
 local function isprogram(x)
 	return getmetatable(x) == programmt
 end
@@ -67,6 +78,7 @@ end
 -- Outside of a program (or other module), the 'openAs(program)' method must
 --    be used instead. This is because the compilation process for probabilistic
 --    code is specialized to the program using that code.
+
 local function modCacheLookup(mod, prog, real)
 	local p = mod.cache[prog]
 	if not p then return false end
@@ -74,6 +86,7 @@ local function modCacheLookup(mod, prog, real)
 	if not r then return false end
 	return r
 end
+
 local function modCachePut(mod, prog, real, value)
 	local p = mod.cache[prog]
 	if not p then
@@ -82,6 +95,7 @@ local function modCachePut(mod, prog, real, value)
 	end
 	p[real] = value
 end
+
 local function modCacheLookupOrCreate(mod, prog, real)
 	local res = modCacheLookup(mod, prog, real)
 	if not res then
@@ -90,6 +104,7 @@ local function modCacheLookupOrCreate(mod, prog, real)
 	end
 	return res
 end
+
 local modulemt = 
 {
 	-- open():
@@ -120,6 +135,8 @@ local modulemt =
 		return val
 	end
 }
+modulemt.__index = modulemt
+
 local function module(luafn)
 	if type(luafn) ~= "function" then
 		error("Argument to a qs.module must be a Lua function")
@@ -132,6 +149,7 @@ local function module(luafn)
 	setmetatable(modobj, modulemt)
 	return modobj
 end
+
 local function ismodule(x)
 	return getmetatable(x) == modulemt
 end

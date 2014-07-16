@@ -194,9 +194,6 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 					"Non-POD parameters to a random choice must have a 'copy' initialization method")
 			end
 		end
-		RandomChoiceT.RealType = real
-		RandomChoiceT.ValueType = ValueType
-		RandomChoiceT.isStructural = isStructural
 		RandomChoiceT.entries:insert({field="value", type=ValueType})
 		for i,spt in ipairs(StoredParamTypes) do
 			RandomChoiceT.entries:insert({field=paramField(i), type=spt})
@@ -209,6 +206,13 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 		if hasUpperBound then
 			RandomChoiceT.entries:insert({field=Options.UpperBound, type=real})
 		end
+
+		-- Store some properties on the type that other code might want to refer to
+		RandomChoiceT.RealType = real
+		RandomChoiceT.ValueType = ValueType
+		RandomChoiceT.isStructural = isStructural
+		RandomChoiceT.boundState = boundState
+		RandomChoiceT.sampleFunction = sl.sample
 
 		local function paramArgList(self)
 			local lst = terralib.newlist()
@@ -374,8 +378,14 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 		end
 
 		-- Get the (transformed) stored value of this random choice
+		-- Non-POD types are returned by pointer (so callers should copy
+		--    the return value if they want to modify it)
 		RandomChoiceT.methods.getValue = macro(function(self)
-			return fwd(`self.value, self)
+			return quote
+				var val = [fwd(`self.value, self)]
+			in
+				[util.isPOD(ValueType) and (`val) or (`&val)]
+			end
 		end)
 
 
@@ -423,29 +433,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 			updateopts:insert((`opts.[Options.UpperBound]))
 		end
 		---------------------
-		return quote
-			var val : ValType
-			if [trace.isRecordingTrace()] then
-				-- Look up value in the currently-executing trace
-				var lookupval = [trace.lookupRandomChoiceValue(RandomChoiceT, args, ctoropts, updateopts)]
-				-- Copy the value
-				S.copy(val, lookupval)
-			else
-				-- Just draw a sample (respect bounds)
-				val = sl.sample([args])
-				val = [fwd(inv(val, opts), opts)]
-			end
-			-- defer destruct if ValType has a destructor
-			escape
-				if ValType:isstruct() and ValType:getmethod("destruct") then
-					emit quote defer val:destruct() end
-				end
-			end
-		in
-			-- Return pointer-to-struct, in keeping with salloc() convention,
-			--    if ValType is non-POD
-			[util.isPOD(ValType) and (`val) or (`&val)]
-		end
+		return trace.lookupRandomChoiceValue(RandomChoiceT, args, ctoropts, updateopts)
 	end)
 
 	-- This macro facilitates models where we directly observe the values
@@ -478,6 +466,7 @@ return
 {
 	makeRandomChoice = makeRandomChoice,
 	Options = Options,
+	BoundState = BoundState,
 	structHasMember = structHasMember,
 	exports = 
 	{
