@@ -10,12 +10,7 @@ local globals = util.require("globals")
 -- Its one function, 'compile', compiles and returns the program for the given
 --    choice of real (optional) as well as the return type of the program
 
-local progcompile = S.memoize(function(self, real)
-
-	trace.compilation.beginCompilation(self, real)
-
-	-- Do a first compilation pass that detects
-	--    the types of all random choices used in the program.
+local typeDetectionPass = S.memoize(function(self, real)
 	trace.compilation.beginRCTypeDetectionPass()
 	local tfn = self.specializationFn(self, real, true)
 	if not terralib.isfunction(tfn) then
@@ -28,6 +23,16 @@ local progcompile = S.memoize(function(self, real)
 	end
 	local RetType = T.returntype
 	trace.compilation.endRCTypeDetectionPass()
+	return RetType
+end)
+
+local progcompile = S.memoize(function(self, real)
+
+	trace.compilation.beginCompilation(self, real)
+
+	-- Do a first compilation pass that detects
+	--    the types of all random choices used in the program.
+	local RetType = typeDetectionPass(self, real)
 
 	-- Now, compile the actual program.
 	-- ABSOLUTELY MUST be done asynchronously, since compiling

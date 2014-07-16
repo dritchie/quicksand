@@ -58,6 +58,7 @@ end
 -------------------------------------
 
 local Address = S.Vector(int)
+
 local terra hashAddress(addr: Address)
 	return Hash.rawhash([&int8](addr:get(0)), sizeof(int)*addr:size())
 end
@@ -66,16 +67,34 @@ hashAddress:setinlined(true)
 -- Database of values for a particular type of random choice
 local RandomDB = S.memoize(function(RandomChoiceT)
 
-	local struct ChoicesWithCounter(S.Object)
+	-- A random choice, plus an index that identifies at what point
+	--    in the program execution order this random choice was made
+	-- (e.g. index 0 = the first random choice made)
+	local struct ChoiceWithIndex(S.Object)
 	{
-		choices: S.Vector(RandomChoiceT),
+		choice: RandomChoiceT,
+		index: uint64
+	}
+
+	-- A list of indexed random choices, plus a counter
+	-- This represents the list of random choices that have been made at a particular
+	--    lexical address.
+	-- The counter keeps track of how many times we've hit this address in the 
+	--    current program execution.
+	local struct IndexedChoicesWithCounter(S.Object)
+	{
+		choices: S.Vector(ChoiceWithIndex),
 		counter: uint64
 	}
-	terra ChoicesWithCounter:__init()
+	terra IndexedChoicesWithCounter:__init()
 		self:initmembers()
 		self.counter = 0
 	end
 
+	-- A list of pointers to random choices, plus a counter.
+	-- We use this to store a 'flat' list of random choices, which provides
+	--    faster lookup during structure-invariant program executions.
+	-- The counter keeps track of which random choice we should look up next.
 	local struct ChoicePointersWithCounter(S.Object)
 	{
 		pointers: S.Vector(&RandomChoiceT),
@@ -93,19 +112,7 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 	local struct RandomDBT(S.Object)
 	{
 		addressStack: &Address,
-		-- IMPORTANT: It is ok to take pointers directly into choicemap because HashMap
-		--    is implemented using a table of linked lists, and mapped values live at the
-		--    same memory location (i.e. list cell) forever after they're inserted.
-		-- If and when we change the implementation of HashMap, we'll need to ensure that
-		--    this is still OK (or make appropriate modifications).
-		-- For example: If we use a more efficient, non-link-list-based table, we'll need
-		--    to store pointers to RandomChoiceT that are allocated elsewhere.
-		-- An idea: Allocate the RandomChoiceT's from a custom memory pool which we can
-		--    optionally re-order. If structural changes are uncommmon, then
-		--    after a structure change, we can re-order the memory pool by linear program
-		--    occurrence order so that we get greater cache coherence when accessing random
-		--    choices via the flat list.
-		choicemap: HashMap(Address, ChoicesWithCounter, hashAddress),
+		choicemap: HashMap(Address, IndexedChoicesWithCounter, hashAddress),
 		choicelist: ChoicePointersWithCounter
 	}
 
@@ -124,7 +131,7 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 
 	-- Returns the random choice, plus a boolean indicating whether the choice
 	--    was retrieved (true) or had to be created (false).
-	local function lookupStructural(initArgs)
+	local function lookupStructural(self, initArgs)
 		return quote
 			-- Retrieves the list of choices made at this lexical address (or creates an
 			--    empty list if no choices have yet been made here)
@@ -133,27 +140,32 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 			--    we need to create a new database entry for the new choice.
 			if clist.choices:size() <= clist.counter then
 				foundit = false
-				-- Add a new DB entry
+				-- Add a new random choice database entry
 				clist.choices:insert()
-				clist.choices(clist.choices:size()):init([initArgs])
-				-- Increment self.newlogprob, since we just created a new random choice
-				self.newlogprob = self.newlogprob + c.choices(clist.choices:size()).logprob
+				-- Initialize it
+				clist.choices(clist.choices:size()).choice:init([initArgs])
 			end
-			var x = self.clist.choices:get(clist.counter)
+			var ichoice = clist.choices:get(clist.counter)
 			-- Record the fact that we've hit this lexical position one more time
 			clist.counter = clist.counter + 1
-			-- Add a pointer to this choice to the flat list that we're building up.
-			self.choicelist.pointers:insert(x)
+			-- Record the index in the program execution order where this choice occured
+			ichoice.index = self.choicelist.counter
+			self.choicelist.counter = self.choicelist.counter + 1
 		in
-			x, foundit
+			&ichoice.choice, foundit
 		end
 	end
 
 	-- Make a method for each overload of RandomChoiceT:init
 	for _,def in ipairs(RandomChoiceT.methods.__init:getdefinitions()) do
-		local argsyms = def:gettype().parameters:map(function(t) return symbol(t) end)
+		local argTypes = def:gettype().parameters
+		local argsyms = terralib.newlist()
+		-- Skip argTypes[1], which is the self argument
+		for i=2,#argTypes do
+			argsyms:insert(symbol(argTypes[i]))
+		end
 		terra RandomDBT:lookupStructural([argsyms])
-			return [lookupStructural(argsyms)]
+			return [lookupStructural(self, argsyms)]
 		end
 	end
 
@@ -166,9 +178,20 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 	-- Prepare for a trace update
 	terra RandomDBT:prepareForTraceUpdate(canStructureChange: bool)
 		-- If non-structural:
-		--    reset the flat list index counter
+		--    rebuild the flat list of choice pointers, if needed
 		if not canStructureChange then
-			self.choicelist.counter = 0
+			if self.choicelist.pointers:size() == 0 then
+				-- self.choicelist.counter tells the number of random choices
+				--    made on the last execution
+				self.choicelist.pointers:reserve(self.choicelist.counter)
+				-- This is a total abstraction violation, but it's the fastest way to do what I want...
+				self.choicelist.pointers._size = self.choicelist.counter
+				for addr,clist in self.choicemap do
+					for ichoice in clist do
+						self.choicelist.pointers(ichoice.index) = &ichoice.choice
+					end
+				end
+			end
 		-- If structural:
 		--    mark all variables as inactive
 		--    clear the flat choice list
@@ -176,8 +199,10 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 		else
 			for rcp in self.choicelist.pointers do rcp.active = false end
 			self.choicelist.pointers:clear()
-			for add,clist in self.choicemap do clist.counter = 0 end
+			for addr,clist in self.choicemap do clist.counter = 0 end
 		end
+		-- Always: Reset the flat list index counter
+		self.choicelist.counter = 0
 	end
 
 	-- Clear out any choices that were not reachable on the last run of the program
@@ -186,7 +211,7 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 	terra RandomDBT:clearUnreachables()
 		var oldlp : RandomChoiceT.RealType = 0.0
 		for addr,clist in self.choicemap do
-			for i=[int64](clist.size()-1),-1,-1 do
+			for i=[int64](clist:size()-1),-1,-1 do
 				if not clist(i).active then
 					oldlp = oldlp + clist(i).logprob
 					S.rundestructor(clist(i))
@@ -246,9 +271,8 @@ local RandExecTrace = S.memoize(function(program, real)
 	end
 
 	-- Create the global pointer variable for this trace type
-	local gTrace = global(&RandExecTraceT, nil)
+	local gTrace = global(&RandExecTraceT, 0)
 	globalTracePointers[RandExecTraceT] = gTrace
-
 
 	terra RandExecTraceT:__init()
 		self.logprob = 0.0
@@ -283,7 +307,7 @@ local RandExecTrace = S.memoize(function(program, real)
 	end
 
 	local nextAddress = 0
-	RandExecTraceT.methods.pushAddressStack = macro(function()
+	RandExecTraceT.methods.pushAddressStack = macro(function(self)
 		local address = nextAddress
 		nextAddress = nextAddress + 1
 		return quote
@@ -293,7 +317,7 @@ local RandExecTrace = S.memoize(function(program, real)
 		end
 	end)
 
-	RandExecTraceT.methods.popAddressStack = macro(function()
+	RandExecTraceT.methods.popAddressStack = macro(function(self)
 		return quote
 			if self.canStructureChange then
 				self.addressStack:remove()
@@ -318,6 +342,10 @@ local RandExecTrace = S.memoize(function(program, real)
 				self:pushAddressStack()
 				x, foundit = [rdbForType(self, RCType)]:lookupStructural([initArgsTmp])
 				self:popAddressStack()
+				if not foundit then
+					-- Increment self.newlogprob, since we just created a new random choice
+					self.newlogprob = self.newlogprob + x.logprob
+				end
 			end
 		in
 			x, foundit
@@ -503,7 +531,6 @@ local function lookupRandomChoiceValue(RandomChoiceT, args, ctoropts, updateopts
 					-- If we're currently in a trace update execution, look up the choice value from the
 					--    currently-executing trace.
 					if [isRecordingTrace()] then
-						-- var rc, foundit = [globalTrace()]:lookupRandomChoice(RandomChoiceT, [args], [ctoropts])
 						var rc, foundit = [GlobalTraceType().lookupRandomChoice(globalTrace(), RandomChoiceT, args, ctoropts)]
 						-- If this choice was retrieved, not created, then we should check if
 						--    the prior probability etc. need to be updated

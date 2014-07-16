@@ -44,7 +44,7 @@ local HM = S.memoize(function(K, V, hashfn)
 	{
 		__cells: &&HashCell,
 		__capacity: uint,
-		size: uint
+		__size: uint
 	}
 	function HashMap.metamethods.__typename() return ("HashMap(%s,%s)"):format(tostring(K), tostring(V)) end
 
@@ -54,7 +54,7 @@ local HM = S.memoize(function(K, V, hashfn)
 		for i=0,self.__capacity do
 			self.__cells[i] = nil
 		end
-		self.size = 0
+		self.__size = 0
 	end
 
 	terra HashMap:__init() : {}
@@ -68,13 +68,16 @@ local HM = S.memoize(function(K, V, hashfn)
 				self.__cells[i] = nil
 			end
 		end
-		self.size = 0
+		self.__size = 0
 	end
 
 	terra HashMap:__destruct()
 		self:clear()
 		S.free(self.__cells)
 	end
+
+	terra HashMap:size() return self.__size end
+	HashMap.methods.size:setinlined(true)
 
 	terra HashMap:hash(key: K)
 		return hashfn(key) % self.__capacity
@@ -113,7 +116,7 @@ local HM = S.memoize(function(K, V, hashfn)
 		cell = HashCell.alloc():init(key)
 		cell.next = self.__cells[index]
 		self.__cells[index] = cell
-		self.size = self.size + 1
+		self.__size = self.__size + 1
 		self:__checkExpand()
 		return &cell.val, false
 	end
@@ -143,9 +146,9 @@ local HM = S.memoize(function(K, V, hashfn)
 	terra HashMap:__expand()
 		var oldcap = self.__capacity
 		var oldcells = self.__cells
-		var oldsize = self.size
+		var old__size = self.__size
 		self:__init(2*oldcap)
-		self.size = oldsize
+		self.__size = old__size
 		for i=0,oldcap do
 			var cell = oldcells[i]
 			while cell ~= nil do
@@ -160,7 +163,7 @@ local HM = S.memoize(function(K, V, hashfn)
 	end
 
 	terra HashMap:__checkExpand()
-		if [float](self.size)/self.__capacity > loadFactor then
+		if [float](self.__size)/self.__capacity > loadFactor then
 			self:__expand()
 		end
 	end
@@ -190,7 +193,7 @@ local HM = S.memoize(function(K, V, hashfn)
 			newcell.next = cell
 			self.__cells[index] = newcell
 		end
-		self.size = self.size + 1
+		self.__size = self.__size + 1
 		self:__checkExpand()
 	end
 
@@ -208,7 +211,7 @@ local HM = S.memoize(function(K, V, hashfn)
 				else
 					prevcell.next = cell.next
 				end
-				self.size = self.size - 1
+				self.__size = self.__size - 1
 				cell:delete()
 				return
 			end
