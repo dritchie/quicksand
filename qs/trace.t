@@ -121,6 +121,13 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 		self.addressStack = addressStack
 	end
 
+	-- Can almost just use the default copy constructor, but for:
+	--    * Need to clear out the flat list of pointers (since those will point to the copy source)
+	terra RandomDBT:__copy(other: &RandomDBT)
+		self:copymembers(other)
+		self.choicelist.pointers:clear()
+	end
+
 	terra RandomDBT:lookupNonStructural()
 		-- Just retrieve the next choice in the flat list, and then
 		--   increment the index.
@@ -303,6 +310,19 @@ local RandExecTrace = S.memoize(function(program, real)
 			end
 			-- Try running from scratch
 			self:update(true)
+		end
+	end
+
+	-- Can almost just use the default copy constructor, but for a couple things:
+	--    * Need to make the 'addressStack' pointers in the rdbs correct
+	terra RandExecTraceT:__copy(other: &RandExecTraceT)
+		self:copymembers(other)
+		escape
+			for _,rct in ipairs(rcTypesUsed) do
+				emit quote
+					[rdbForType(self, rct)].addressStack = &self.addressStack
+				end
+			end
 		end
 	end
 
