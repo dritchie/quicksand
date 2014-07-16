@@ -266,22 +266,6 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 				        [loHiSyms])
 		end
 
-		-- Copy constructor
-		terra RandomChoiceT:__copy(other: &RandomChoiceT) : {}
-			S.copy(self.value, &other.value)
-			escape
-				for i=1,#ParamTypes do
-					emit quote S.copy(self.[paramField(i)], &other.[paramField(i)]) end
-				end
-				if hasLowerBound then
-					emit quote self.[Options.LowerBound] = other.[Options.LowerBound] end
-				end
-				if hasUpperBound then
-					emit quote self.[Options.UpperBound] = other.[Options.UpperBound] end
-				end
-			end
-		end
-
 		-- Update for a new run of the program, checking for changes
 		paramSyms = ParamTypes:map(function(pt) return symbol(pt) end)
 		loHiSyms = terralib.newlist()
