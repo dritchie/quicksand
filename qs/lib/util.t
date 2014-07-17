@@ -61,6 +61,26 @@ function U.require(name)
 end
 
 
+local timestuff = terralib.includecstring [[
+#include <stdlib.h>
+
+#ifndef _WIN32
+#include <sys/time.h>
+double __currentTimeInSeconds() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec + tv.tv_usec / 1000000.0;
+}
+#else
+#include <time.h>
+double __currentTimeInSeconds() {
+	return time(NULL);
+}
+#endif
+]]
+U.__currentTimeInSeconds = timestuff.__currentTimeInSeconds
+
+
 return U
 
 

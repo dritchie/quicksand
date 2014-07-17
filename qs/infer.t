@@ -2,7 +2,6 @@ local util = terralib.require("qs.lib.util")
 
 local S = util.require("lib.std")
 local globals = util.require("globals")
-local mcmc = util.require("mcmc")
 local progmod = util.require("progmodule")
 local trace = util.require("trace")
 
@@ -73,7 +72,8 @@ local function WeightedRejectionSample(numsamps)
 			for i=0,numsamps do
 				var tr = TraceType.salloc():init()
 				samples:insert()
-				s.value = tr.returnValue
+				var s = samples:get(samples:size()-1)
+				S.copy(s.value, tr.returnValue)
 				s.logprob = tr.logprob
 			end
 		end
