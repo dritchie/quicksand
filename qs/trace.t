@@ -303,6 +303,7 @@ local function memoizeOnPredicate(fn)
 	end)
 
 	return function(predFnOrTable)
+		predFnOrTable = predFnOrTable or {}
 		if type(predFnOrTable) == "function" then
 			return memfn(predFnOrTable)
 		else

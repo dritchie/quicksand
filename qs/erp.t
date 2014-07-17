@@ -1,7 +1,7 @@
 local util = terralib.require("qs.lib.util")
 
 local S = util.require("lib.std")
-local tmath = util.require("tmath")
+local tmath = util.require("lib.tmath")
 local globals = util.require("globals")
 local trace = util.require("trace")
 
@@ -339,6 +339,12 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 			end
 			self.active = true
 		end
+
+		-- Is this choice structural or not?
+		-- (Structural-ness is a static property, but sometimes we need to query it at runtime for
+		--    different choices)
+		terra RandomChoiceT:isStructural() return isStructural end
+		RandomChoiceT.methods.isStructural:setinlined(true)
 
 		-- Rescore by recomputing prior logprob
 		terra RandomChoiceT:rescore() : {}

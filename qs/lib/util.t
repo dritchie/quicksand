@@ -81,6 +81,15 @@ double __currentTimeInSeconds() {
 U.__currentTimeInSeconds = timestuff.__currentTimeInSeconds
 
 
+U.swap = macro(function(a, b)
+	return quote
+		var tmp = a
+		a = b
+		b = tmp
+	end
+end)
+
+
 return U
 
 

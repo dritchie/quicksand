@@ -1,25 +1,16 @@
 local util = terralib.require("qs.lib.util")
 
 local S = util.require("lib.std")
-local tmath = util.require("tmath")
+local tmath = util.require("lib.tmath")
 local globals = util.require("globals")
+local R = util.require("lib.random")
 
--- TODO: Ability to swap out different uniform random number generators
-local CRand = terralib.includecstring [[
-#include <stdlib.h>
-#include <time.h>
-double random_() { return rand() / (RAND_MAX+1.0); }
-void initrand_() { srand(time(NULL)); }
-]]
 
-local R = {}
-
-R.random = CRand.random_
-R.initrand = CRand.initrand_
+local D = {}
 
 --------------------------------------------
 
-R.bernoulli = S.memoize(function(real)
+D.bernoulli = S.memoize(function(real)
 	return {
 		sample = terra(p: real) : bool
 			var randval = R.random()
@@ -39,7 +30,7 @@ end)
 
 --------------------------------------------
 
-R.uniform = S.memoize(function(real)
+D.uniform = S.memoize(function(real)
 	return {
 		sample = terra(lo: real, hi: real) : real
 			var u = R.random()
@@ -54,7 +45,7 @@ end)
 
 --------------------------------------------
 
-R.gaussian = S.memoize(function(real)
+D.gaussian = S.memoize(function(real)
 	local flt = globals.primfloat
 	return {
 		sample = terra(mu: real, sigma: real) : real
@@ -102,7 +93,7 @@ local log_gamma = S.memoize(function(real)
 end)
 
 
-R.gamma = S.memoize(function(real)
+D.gamma = S.memoize(function(real)
 	local flt = globals.primfloat
 	local terra sample(shape: real, scale: real) : real
 		if shape < 1.0 then return sample(1.0+shape,scale) * tmath.pow(R.random(), 1.0/shape) end
@@ -111,7 +102,7 @@ R.gamma = S.memoize(function(real)
 		var c = 1.0/tmath.sqrt(9.0*d)
 		while true do
 			repeat
-				x = [R.gaussian(flt)].sample(0.0, 1.0)
+				x = [D.gaussian(flt)].sample(0.0, 1.0)
 				v = 1.0+c*x
 			until v > 0.0
 			v = v*v*v
@@ -138,11 +129,11 @@ local log_beta = S.memoize(function(real)
 	end
 end)
 
-R.beta = S.memoize(function(real)
+D.beta = S.memoize(function(real)
 	return {
 		sample = terra(a: real, b: real) : real
-			var x = [R.gamma(real)].sample(a, 1.0)
-			return x / (x + [R.gamma(real)].sample(b, 1.0))
+			var x = [D.gamma(real)].sample(a, 1.0)
+			return x / (x + [D.gamma(real)].sample(b, 1.0))
 		end,
 		logprob = terra(x: real, a: real, b: real) : real
 			if x > 0.0 and x < 1.0 then
@@ -165,7 +156,7 @@ local g = S.memoize(function(real)
 	end
 end)
 
-R.binomial = S.memoize(function(real)
+D.binomial = S.memoize(function(real)
 	local inv2 = 1/2
 	local inv3 = 1/3
 	local inv6 = 1/6
@@ -178,7 +169,7 @@ R.binomial = S.memoize(function(real)
 			while n > N do
 				a = 1 + n/2
 				b = 1 + n-a
-				var x = [R.beta(flt)].sample(a, b)
+				var x = [D.beta(flt)].sample(a, b)
 				if x >= p then
 					n = a - 1
 					p = p / x
@@ -208,7 +199,7 @@ R.binomial = S.memoize(function(real)
 			var z = num / den
 			var invsd = tmath.sqrt(z)
 			z = d2 * invsd
-			return [R.gaussian(real)].logprob(z, 0.0, 1.0) + tmath.log(invsd)
+			return [D.gaussian(real)].logprob(z, 0.0, 1.0) + tmath.log(invsd)
 		end
 	}
 end)
@@ -239,15 +230,15 @@ local terra lnfact(x: int)
 	return ssum
 end
 
-R.poisson = S.memoize(function(real)
+D.poisson = S.memoize(function(real)
 	return {
 		sample = terra(mu: real) : int
 			var k = 0.0
 			while mu > 10 do
 				var m = (7.0/8)*mu
-				var x = [R.gamma(real)].sample(m, 1.0)
+				var x = [D.gamma(real)].sample(m, 1.0)
 				if x > mu then
-					return int(k + [R.binomial(real)].sample(mu/x, (m-1)))
+					return int(k + [D.binomial(real)].sample(mu/x, (m-1)))
 				else
 					mu = mu - x
 					k = k + m
@@ -269,7 +260,7 @@ end)
 
 --------------------------------------------
 
-R.multinomial_array = S.memoize(function(N)
+D.multinomial_array = S.memoize(function(N)
 	return S.memoize(function(real)
 		return {
 			sample = terra(params: real[N]) : int
@@ -298,7 +289,7 @@ R.multinomial_array = S.memoize(function(N)
 	end)
 end)
 
-R.multinomial_vector = S.memoize(function(real)
+D.multinomial_vector = S.memoize(function(real)
 	return {
 		sample = terra(params: &S.Vector(real)) : int
 			var sum = real(0.0)
@@ -327,14 +318,14 @@ end)
 
 --------------------------------------------
 
-R.dirichlet_array = S.memoize(function(N)
+D.dirichlet_array = S.memoize(function(N)
 	return S.memoize(function(real)
 		return {
 			sample = terra(params: real[N]) : real[N]
 				var out : real[N]
 				var ssum = real(0.0)
 				for i=0,N do
-					var t = [R.gamma(real)].sample(params[i], 1.0)
+					var t = [D.gamma(real)].sample(params[i], 1.0)
 					out[i] = t
 					ssum = ssum + t
 				end
@@ -358,17 +349,17 @@ R.dirichlet_array = S.memoize(function(N)
 	end)
 end)
 
-R.dirichlet_vector = S.memoize(function(real)
+D.dirichlet_vector = S.memoize(function(real)
 	return {
 		-- NOTE: It is up to the caller to manage the memory of the
-		--    returned vector.
+		--    returned vectoD.
 		sample = terra(params: &S.Vector(real)) : S.Vector(real)
 			var out : S.Vector(real)
 			out:init(params:size())
 			for i=0,params:size() do out:insert() end
 			var ssum = real(0.0)
 			for i=0,params:size() do
-				var t = [R.gamma(real)].sample(params(i), 1.0)
+				var t = [D.gamma(real)].sample(params(i), 1.0)
 				out(i) = t
 				ssum = ssum + t
 			end
@@ -393,7 +384,7 @@ end)
 
 --------------------------------------------
 
-return R
+return D
 
 
 

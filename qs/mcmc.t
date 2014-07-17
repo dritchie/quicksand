@@ -4,6 +4,8 @@ local S = util.require("lib.std")
 local globals = util.require("globals")
 local progmod = util.require("progmodule")
 local trace = util.require("trace")
+local random = util.require("lib.random")
+local tmath = util.require("lib.tmath")
 
 local C = terralib.includecstring [[
 #include <stdio.h>
@@ -12,13 +14,6 @@ inline FILE* getstdout() { return stdout; }
 inline void flushstderr() { fflush(stderr); }
 ]]
 
-
-local function hasMember(typ, name)
-	for _,e in ipairs(typ.entries) do
-		if e.field == name then return true end
-	end
-	return false
-end
 
 
 -- 'MCMC' is a function that takes a transition kernel and a set of parameters
@@ -34,9 +29,10 @@ end
 --       (The function thus runs for burnin + numsamps*lag total iterations
 --       + verbose: Whether to print out stats. Can be constant true/false, or a file handle.
 --                  to which output should be written (true = stdout).
---                  Will look for fields 'proposalsMade' and 'proposalsAccepted' in kernel type.
+--                  Will look for methods 'proposalsMade' and 'proposalsAccepted' in kernel type.
 --					Will also look for method 'printStates' in kernel type.
 local function MCMC(kernel, params)
+	params = params or {}
 	local _numsamps = params.numsamps or 1000
 	local _burnin = params.burnin or 0
 	local _lag = params.lag or 1
@@ -74,15 +70,18 @@ local function MCMC(kernel, params)
 			if verbose then
 				C.fprintf(C.getstderr(), "\n")
 				escape
-					if hasMember(KernelType, "proposalsMade") and hasMember(KernelType, "proposalsAccepted") then
-						emit quote C.fprintf(outstream, "Acceptance ratio: %u/%u (%g\%)\n",
-							k.proposalsAccepted, k.proposalsMade, 100.0*double(k.proposalsAccepted)/k.proposalsMade)
+					if KernelType:getmethod("proposalsMade") and KernelType:getmethod("proposalsAccepted") then
+						emit quote
+							var pm = k:proposalsMade()
+							var pa = k:proposalsAccepted()
+							C.fprintf(outstream, "Acceptance ratio: %u/%u (%g\%)\n", pa, pm, 100.0*double(pa)/pm)
 						end
 					end
 					if KernelType:getmethod("printStats") then
 						emit quote k:printStats(outstream) end
 					end
 				end
+				C.fprintf(outstream, "Time: %g\n", t1 - t0)
 			end
 		end
 
@@ -104,11 +103,90 @@ end
 
 
 
+-----------------------------------------
+--      Some commonly-used kernels     --
+-----------------------------------------
+
+
+-- Performs the trace-MH algorithm from the lightweight implementation paper.
+-- (Picks a random choice and proposes a change)
+-- Can optionally specify whether the kernel should apply just to structural choices,
+--    just to nonstructural choices, or to both (defaults to both).
+-- NOTE: For this kernel, I've decided that the params should only be constants. It simplifies
+--    some logic, and I really can't imagine a context where you'd want to determine them at runtime.
+local function TraceMHKernel(params)
+	params = params or {}
+	local doStruct = params.doStruct
+	local doNonstruct = params.doNonstruct
+	if doStruct == nil then doStruct = true end
+	if doNonstruct == nil then doNonstruct = true end
+	assert(doStruct or doNonstruct, "TraceMHKernel: cannot set both 'doStruct' and 'doNonstruct' to false")
+	assert(type(doStruct) == "boolean" and type(doNonstruct) == "boolean",
+		"TraceMHKernel: 'doStruct' and 'doNonstruct' must be boolean constants")
+
+	local filter = {}
+	local oneTypeOnly = (doStruct and not doNonstruct) or (doNonstruct and not doStruct)
+	if oneTypeOnly then
+		filter = {isStructural=doStruct}
+	end
+
+	return function(TraceType)
+		
+		local struct Kernel(S.Object)
+		{
+			propsMade: uint64,
+			propsAccepted: uint64
+		}
+
+		terra Kernel:__init()
+			self.propsMade = 0
+			self.propsAccepted = 0
+		end
+
+		terra Kernel:proposalsMade() return self.propsMade end
+		terra Kernel:proposalsAccepted() return self.proposalsAccepted end
+
+		terra Kernel:next(currTrace: &TraceType)
+			self.propsMade = self.propsMade + 1
+			-- Make a copy of the current trace which we use to evaluate our proposal
+			var nextTrace = TraceType.salloc():copy(currTrace)
+			-- Pick a random choice uniformly at random
+			var numchoices = [TraceType.countChoices(filter)](nextTrace)
+			var randindex = random.random() * numchoices
+			var rc = [TraceType.getChoice(filter)](nextTrace, randindex)
+			-- Propose a change to that random choice and re-execute the program
+			var fwdPropLP, rvsPropLP = rc:proposal()
+			nextTrace:update(rc:isStructural())
+			-- Account for probability changes due to dimension-jumping
+			if nextTrace.newlogprob ~= 0.0 or nextTrace.oldlogprob ~= 0.0 then
+				var oldnumchoices = numchoices
+				var newnumchoices = [TraceType.countChoices(filter)](nextTrace)
+				fwdPropLP = fwdPropLP + nextTrace.newlogprob - tmath.log(double(oldnumchoices))
+				rvsPropLP = rvsPropLP + nextTrace.oldlogprob - tmath.log(double(newnumchoices))
+			end
+			-- Determine acceptance/rejection
+			var acceptThresh = (nextTrace.logprob - currTrace.logprob) + rvsPropLP - fwdPropLP
+			if nextTrace.conditionsSatisfied and tmath.log(random.random()) < acceptThresh then
+				-- Accept
+				self.propsAccepted = self.propsAccepted + 1
+				util.swap(@currTrace, @nextTrace)
+			end
+		end
+
+		return Kernel
+	end
+end
+
+
+-- TODO: MultiKernel, SchedulingKernel (, DriftKernel?)
+
+
 return
 {
 	exports = 
 	{
-		MCMC = MCMC
+		MCMC = MCMC,
+		TraceMHKernel = TraceMHKernel
 	}
 }
 

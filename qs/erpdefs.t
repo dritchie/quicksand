@@ -3,7 +3,7 @@ local util = terralib.require("qs.lib.util")
 local S = util.require("lib.std")
 local erp = util.require("erp")
 local distrib = util.require("distrib")
-local tmath = util.require("tmath")
+local tmath = util.require("lib.tmath")
 local globals = util.require("globals")
 
 
