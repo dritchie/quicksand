@@ -4,6 +4,7 @@ local S = util.require("lib.std")
 local globals = util.require("globals")
 local mcmc = util.require("mcmc")
 local progmod = util.require("progmodule")
+local trace = util.require("trace")
 
 
 
@@ -37,15 +38,58 @@ local function infer(program, query, method)
 end
 
 
+
+--------------------------------------------
+--      Super simple inference methods    --
+--------------------------------------------
+
+
+-- Forward sampling is the simplest inference method
+-- (Just run program forward repeatedly)
+-- NOTE: scores (logprobs) of samples returned from this method are all 0
+local function ForwardSample(numsamps)
+	return function(program)
+		progmod.assertIsProgram(program, "ForwardSample")
+		local tfn = program:compile()
+		return terra(samples: &S.Vector(SampleType(program)))
+			for i=0,numsamps do
+				samples:insert()
+				var s = samples:get(samples:size()-1)
+				s.value = tfn()
+				s.logprob = 0.0
+			end
+		end
+	end
+end
+
+
+-- Rejection sampling does a little bit more
+-- (Repeatedly run trace rejection initialization)
+local function WeightedRejectionSample(numsamps)
+	return function(program)
+		progmod.assertIsProgram(program, "WeightedRejectionSample")
+		local TraceType = trace.RandExecTrace(program, globals.primfloat)
+		return terra(samples: &S.Vector(SampleType(program)))
+			for i=0,numsamps do
+				var tr = TraceType.salloc():init()
+				samples:insert()
+				s.value = tr.returnValue
+				s.logprob = tr.logprob
+			end
+		end
+	end
+end
+
+
+
 -----------------------------------------
 --      Some commonly-used queries     --
 -----------------------------------------
 
-local Query = {}
 
 -- Just return the raw samples
 -- IMPORTANT: Caller is responsible for the memory of the returned vector.
-function Query.Samples(program)
+function Samples(program)
 	progmod.assertIsProgram(program, "Samples")
 	return terra(samples: &S.Vector(SampleType(program)))
 		-- Need to copy, since we don't have ownership of 'samples'
@@ -62,7 +106,7 @@ end
 --    * The "*" operator (as an inner product)
 --    * The scalar "/" operator
 -- IMPORTANT: Caller is responsible for the memory of the returned mean object.
-function Query.Expectation(doVariance)
+function Expectation(doVariance)
 	return function(program)
 		progmod.assertIsProgram(program, "Expectation")
 		local tfn, RetType = program:compile()
@@ -102,7 +146,7 @@ end
 
 -- Return the MAP estimate from a list of samples
 -- IMPORTANT: Caller is responsible for the memory of the returned object.
-function Query.MAP(program)
+function MAP(program)
 	progmod.assertIsProgram(program, "MAP")
 	return terra(samples: &S.Vector(SampleType(program)))
 		var bestVal : &SampleType(program)
@@ -124,7 +168,7 @@ end
 --    (if not specified, it will compute the sample mean and variance)
 -- 'mean' and 'variance' can be Lua constants or Terra quotes
 -- IMPORTANT: Caller is responsible for the memory of the returned vector.
-function Query.Autocorrelation(mean, variance)
+function Autocorrelation(mean, variance)
 	assert((mean or variance) and (mean and variance),
 		"Autocorrelation: both mean and variance must be provided if one is provided.")
 	return function(program)
@@ -153,7 +197,7 @@ function Query.Autocorrelation(mean, variance)
 		end
 
 		local terra noMeanAndVar(samples: &S.Vector(SampleType(program)))
-			var m, v = [Query.Expectation(true)(program)](samples)
+			var m, v = [Expectation(true)(program)](samples)
 			return withMeanAndVar(samples, m, v)
 		end
 
@@ -183,7 +227,12 @@ return
 	{
 		SampleType = SampleType,
 		infer = infer,
-		Query = Query
+		ForwardSample = ForwardSample,
+		WeightedRejectionSample = WeightedRejectionSample,
+		Samples = Samples,
+		Expectation = Expectation,
+		MAP = MAP,
+		Autocorrelation = Autocorrelation
 	}
 }
 

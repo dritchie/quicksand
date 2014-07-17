@@ -27,9 +27,13 @@ globals.Sample = S.memoize(function(T)
 		value: T,
 		logprob: globals.primfloat
 	}
-	terra Sample:__init(val: T, lp: globals.primfloat)
-		self.value = T
+	terra Sample:__init(val: T, lp: globals.primfloat) : {}
+		self.value = val
 		self.logprob = lp
+	end
+	terra Sample:__init(val: T) : {}
+		self.value = val
+		self.logprob = 0.0
 	end
 	return Sample
 end)

@@ -190,6 +190,8 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 			active: bool
 		}
 		local ValueType = sl.sample:gettype().returntype
+		assert(util.isPOD(ValueType) or ValueType:getmethod("copy"),
+			"Non-POD value type for a random choice must have a 'copy' initialization method")
 		local ParamTypes = sl.sample:gettype().parameters
 		-- Parameters that are pointer-to-struct are stored as struct value types
 		local StoredParamTypes = ParamTypes:map(function(pt) if pt:ispointertostruct() then return pt.type else return pt end end)

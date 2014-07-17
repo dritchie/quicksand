@@ -674,6 +674,7 @@ range:setinlined(true)
 return 
 {
 	compilation = compilation,
+	RandExecTrace = RandExecTrace,
 	lookupRandomChoiceValue = lookupRandomChoiceValue,
 	factor = factor,
 	exports = 
