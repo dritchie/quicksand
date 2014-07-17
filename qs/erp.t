@@ -371,9 +371,10 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 		end
 
 		-- Get the (transformed) stored value of this random choice
-		RandomChoiceT.methods.getValue = macro(function(self)
-			return fwd(`self.value, self)
-		end)
+		terra RandomChoiceT:getValue()
+			return [fwd(`self.value, self)]
+		end
+		RandomChoiceT.methods.getValue:setinlined(true)
 
 
 		-- TODO later(?):

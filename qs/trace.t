@@ -176,10 +176,35 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 		end
 	end
 
+	terra RandomDBT:setAddressStack(addressStack: &Address)
+		self.addressStack = addressStack
+	end
+	RandomDBT.methods.setAddressStack:setinlined(true)
+
+
 	-- Clear out everything
 	terra RandomDBT:clear()
 		self.choicemap:clear()
 		self.choicelist:clear()
+	end
+
+	-- Rebuild the flat list of random choice pointers.
+	-- This is done on-demand, as needed (e.g. for nonstructural updates, or when asking
+	--    for a particular random choice, etc.)
+	terra RandomDBT:ensureFlatListIsBuilt()
+		if self.choicelist.pointers:size() == 0 then
+			-- self.choicelist.counter tells the number of random choices
+			--    made on the last execution
+			self.choicelist.pointers:reserve(self.choicelist.counter)
+			-- This is a total abstraction violation, but it's the fastest way to do what I want...
+			self.choicelist.pointers._size = self.choicelist.counter
+			for addr,clist in self.choicemap do
+				for ichoice in clist do
+					-- ichoice.index tells where in the execution order the choice was made.
+					self.choicelist.pointers(ichoice.index) = &ichoice.choice
+				end
+			end
+		end
 	end
 
 	-- Prepare for a trace update
@@ -187,26 +212,17 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 		-- If non-structural:
 		--    rebuild the flat list of choice pointers, if needed
 		if not canStructureChange then
-			if self.choicelist.pointers:size() == 0 then
-				-- self.choicelist.counter tells the number of random choices
-				--    made on the last execution
-				self.choicelist.pointers:reserve(self.choicelist.counter)
-				-- This is a total abstraction violation, but it's the fastest way to do what I want...
-				self.choicelist.pointers._size = self.choicelist.counter
-				for addr,clist in self.choicemap do
-					for ichoice in clist do
-						self.choicelist.pointers(ichoice.index) = &ichoice.choice
-					end
-				end
-			end
+			self:ensureFlatListIsBuilt()
 		-- If structural:
-		--    mark all variables as inactive
 		--    clear the flat choice list
 		--    reset the per-address loop counters
+		--    mark all variables as inactive
 		else
-			for rcp in self.choicelist.pointers do rcp.active = false end
 			self.choicelist.pointers:clear()
-			for addr,clist in self.choicemap do clist.counter = 0 end
+			for addr,clist in self.choicemap do
+				clist.counter = 0
+				for rc in clist.choices do rc.active = false end
+			end
 		end
 		-- Always: Reset the flat list index counter
 		self.choicelist.counter = 0
@@ -230,6 +246,18 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 		return oldlp
 	end
 
+	-- Get the number of random choices in this rdb
+	terra RandomDBT:countChoices()
+		return self.choicelist.counter
+	end
+	RandomDBT.methods.countChoices:setinlined(true)
+
+	-- Retrieve a random choice by index
+	terra RandomDBT:getChoice(index: uint64)
+		self:ensureFlatListIsBuilt()
+		return self.choicelist.pointers(index)
+	end
+
 	return RandomDBT
 
 end)
@@ -239,6 +267,61 @@ end)
 -- When doing inference, the appropriate one of these points to the 'currently executing trace'
 -- (This is a map from trace type to global pointer variable)
 local globalTracePointers = {}
+
+
+-- Memoize a function on a predicate. A predicate is either a function taking one argument
+--    and returning bool, or a table of (property, boolvalue) pairs. If the latter, we construct
+--    a predicate function that takes an argument and checks if that argument object has all of
+--    the properties with those values.
+-- The function being memoized will always see a predicate function: the details of how it was
+--    constructed are abstracted.
+-- This is used for random choice type filtering operations by RandExecTrace below.
+local function memoizeOnPredicate(fn)
+
+	local memfn = S.memoize(function(...)
+		local args = {...}
+		if #args == 1 and type(args[1]) == "function" then
+			-- If we were passed a predicate function, just pass it through
+			return fn(args[1])
+		else
+			-- Otherwise we need to construct a function out of a list of property,value pairs
+			assert(#args % 2 == 0, "memoizeOnPredicate: found an odd number of args in prop,val pair case")
+			local props = {}
+			for i=1,#args/2 do
+				local key = args[2*i - 1]
+				local val = args[2*i]
+				props[key] = val
+			end
+			local function predfn(x)
+				for k,v in pairs(props) do
+					if x[k] ~= v then return false end
+				end
+				return true
+			end
+			return fn(predfn)
+		end
+	end)
+
+	return function(predFnOrTable)
+		if type(predFnOrTable) == "function" then
+			return memfn(predFnOrTable)
+		else
+			assert(type(predFnOrTable) == "table",
+				"memoizeOnPredicate: argument must be either a function or a table")
+			-- Unpack table into argument list for memoization.
+			-- Sort by key to ensure consistent ordering.
+			local keys = terralib.newlist()
+			for k,_ in pairs(predFnOrTable) do keys:insert(k) end
+			table.sort(keys)
+			local arglist = terralib.newlist()
+			for _,k in ipairs(keys) do
+				arglist:insert(k)
+				arglist:insert(predFnOrTable[k])
+			end
+			return memfn(unpack(arglist))
+		end
+	end
+end
 
 
 -- The trace type itself
@@ -320,7 +403,7 @@ local RandExecTrace = S.memoize(function(program, real)
 		escape
 			for _,rct in ipairs(rcTypesUsed) do
 				emit quote
-					[rdbForType(self, rct)].addressStack = &self.addressStack
+					[rdbForType(self, rct)]:setAddressStack(&self.addressStack)
 				end
 			end
 		end
@@ -347,7 +430,7 @@ local RandExecTrace = S.memoize(function(program, real)
 
 	-- Also returns a boolean indicating whether the random choice was
 	--    retrieved or created.
-	RandExecTraceT.lookupRandomChoice = function(self, RCType, args, ctoropts)
+	function RandExecTraceT.lookupRandomChoice(self, RCType, args, ctoropts)
 		local initArgs = terralib.newlist()
 		for _,a in ipairs(args) do initArgs:insert(a) end
 		for _,a in ipairs(ctoropts) do initArgs:insert(a) end
@@ -412,6 +495,88 @@ local RandExecTrace = S.memoize(function(program, real)
 		-- Release ownership of global trace
 		gTrace = prevTrace
 	end
+
+
+	-- These two 'filter' functions allow the caller to get the number of random choices
+	--    whose type matches some predicate, or to retrieve such a random choice by index.
+
+	local RandExecTraceT.countChoices = memoizeOnPredicate(function(predfn)
+		return terra(self: &RandExecTraceT)
+			var count: uint64 = 0
+			escape
+				for _,rct in ipairs(rcTypesUsed) do
+					if predfn(rct) then
+						emit quote count = count + [rdbForType(self, rct)]:countChoices()
+					end
+				end
+			end
+			return count
+		end
+	end)
+
+	local RandExecTraceT.getChoice = memoizeOnPredicate(function(predfn)
+
+		-- What we return from this function is a proxy object that forwards
+		--    all method calls to the appropriate random choice
+		local struct Proxy
+		{
+			owner: &RandExecTraceT,
+			index: uint64
+		}
+
+		local getForwardingMethod = S.memoize(function(methodname, ...)
+			local argtypes = terralib.newlist({...})
+			local argsyms = argtypes:map(function(t) return symbol(t) end)
+			local terra forwardmethod(self: &Proxy, [argsyms])
+				var base : uint64 = 0
+				escape
+					for _,rct in ipairs(rcTypesUsed) do
+						if predfn(rct) then
+							local method = rct:getmethod(methodname)
+							local i = symbol(uint64)
+							local c = symbol(uint64)
+							emit quote
+								var [i] = self.index - base
+								var [c] = [rdbForType(`self.owner, rct)]:countChoices()
+								if [i] < [c] then
+									var rc = [rdbForType(`self.owner, rct)]:getChoice([i])
+									return method(rc, [argsyms])
+								end
+								base = base + [c]
+							end
+						end
+					end
+				end
+			end
+			-- Attempt to compile the forwarding function.
+			local success, errmsg = pcall(forwardmethod.compile, forwardmethod)
+			if not success then
+				if string.find(errmsg, "incompatible types") then error(string.format(
+					"Return type of random choice method '%s' not uniquely determined by the provided RandExecTrace.getChoice predicate",
+					methodname))
+				else
+					error(errmsg)
+				end
+			end
+			return forwardmethod
+		end)
+
+		Proxy.metamethods.__getmethod = function(self, methodname)
+			return macro(function(self, ...)
+				local args = terralib.newlist({...})
+				local argtypes = args:map(function(a) return a:gettype() end)
+				local forwardmethod = getForwardingMethod(methodname, unpack(argtypes))
+				local Tself = self:gettype()
+				return `forwardmethod([Tself:ispointertostruct() and self or (`&self)], [args])
+			end)
+		end
+
+		return terra(self: &RandExecTraceT, index: uint64)
+			return Proxy { self, index }
+		end
+	end)	
+
+
 
 	return RandExecTraceT
 

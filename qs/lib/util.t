@@ -9,7 +9,7 @@ end
 
 -- Is a type "plain old data," according to Standard Object conventions?
 -- Used in some places to determine when something should be passed by value or by pointer
--- (POD objects pass by value, non-POD objects pass by reference)
+-- (POD objects pass by value, non-POD objects pass by pointer)
 function isPOD(typ)
 	-- Non-struct types are fine
 	if not typ:isstruct() then return true end
