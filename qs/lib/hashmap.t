@@ -61,6 +61,22 @@ local HM = S.memoize(function(K, V, hashfn)
 		self:__init(defaultInitialCapacity)
 	end
 
+	terra HashMap:__copy(other: &HashMap)
+		self:__init(other.__capacity)
+		for i=0,self.__capacity do
+			if other.__cells[i] ~= nil then
+				var cell = HashCell.alloc():copy(other.__cells[i])
+				self.__cells[i] = cell
+				while cell.next ~= nil do
+					var nextcell = cell.next
+					cell.next = HashCell.alloc():copy(nextcell)
+					cell = cell.next
+				end
+			end
+		end
+		self.__size = other.__size
+	end
+
 	terra HashMap:clear()
 		for i=0,self.__capacity do
 			if self.__cells[i] ~= nil then
@@ -135,7 +151,7 @@ local HM = S.memoize(function(K, V, hashfn)
 	-- Does not copy the return value
 	HashMap.metamethods.__apply = terra(self: &HashMap, key: K)
 		var vptr = self:getPointer(key)
-		S.assert(vptr ~= nil, "HashMap() - key does not exist!\n"))
+		S.assert(vptr ~= nil)
 		return @vptr
 	end
 
