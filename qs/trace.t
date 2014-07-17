@@ -561,8 +561,7 @@ local function lookupRandomChoiceValue(RandomChoiceT, args, ctoropts, updateopts
 						[globalTrace()].logprob = [globalTrace()].logprob + rc.logprob
 
 						-- Retrieve and copy the value of the random choice we found/created
-						var gotval = rc:getValue()
-						S.copy(val, gotval)
+						S.copy(val, rc:getValue())
 					else
 						-- If this is not part of a trace execution, just draw a forward sample
 						val = [RandomChoiceT.sampleFunction]([args])

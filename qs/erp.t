@@ -163,6 +163,13 @@ local function getBoundingTransforms(boundState, real)
 end
 
 
+-- Generate an S.copy statement when the second argument may be pointer-to-struct
+local ptrSafeCopy = macro(function(self, other)
+	return quote
+		S.copy(self, [(other:gettype() == &self:gettype()) and (`@other) or other])
+	end
+end)
+
 
 local function makeRandomChoice(sampleAndLogprob, proposal)
 
@@ -237,7 +244,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 		terra RandomChoiceT:__init([paramSyms], [initValSym], [loHiSyms]) : {}
 			escape
 				for i=1,#ParamTypes do
-					emit quote S.copy(self.[paramField(i)], [paramSyms[i]]) end
+					emit quote ptrSafeCopy(self.[paramField(i)], [paramSyms[i]]) end
 				end
 				if hasLowerBound then
 					emit quote self.[Options.LowerBound] = [loSym] end
@@ -246,7 +253,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 					emit quote self.[Options.UpperBound] = [hiSym] end
 				end
 			end
-			S.copy(self.value, [inv(initValSym, self)])
+			ptrSafeCopy(self.value, [inv(initValSym, self)])
 			self:rescore()
 			self.active = true
 		end
@@ -283,7 +290,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 					for i=1,#ParamTypes do
 						emit quote
 							S.rundestructor(self.[paramField(i)])
-							S.copy(self.[paramField(i)], [paramSyms[i]])
+							ptrSafeCopy(self.[paramField(i)], [paramSyms[i]])
 						end
 					end
 					if hasLowerBound then
@@ -303,7 +310,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 							if not util.equal(self.[paramField(i)], p) then
 								hasChanges = true
 								S.rundestructor(self.[paramField(i)])
-								S.copy(self.[paramField(i)], [paramSyms[i]])
+								ptrSafeCopy(self.[paramField(i)], [paramSyms[i]])
 							end
 						end
 					end
@@ -362,14 +369,8 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 		end
 
 		-- Get the (transformed) stored value of this random choice
-		-- Non-POD types are returned by pointer (so callers should copy
-		--    the return value if they want to modify it)
 		RandomChoiceT.methods.getValue = macro(function(self)
-			return quote
-				var val = [fwd(`self.value, self)]
-			in
-				[util.isPOD(ValueType) and (`val) or (`&val)]
-			end
+			return fwd(`self.value, self)
 		end)
 
 

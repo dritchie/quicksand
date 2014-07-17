@@ -117,7 +117,7 @@ S.copy = macro(function(self, other)
         else return false end
     end
     if T:isstruct() and hascopy(T) then
-        return `self:copy(other)
+        return `self:copy(&other)
     elseif T:isarray() and hascopy(T) then
         return quote
             var pa = &self
@@ -128,7 +128,7 @@ S.copy = macro(function(self, other)
     end
     local To = other:gettype()
     return quote
-        self = [To:ispointertostruct() and (`@other) or other]
+        self = other
     end
 end)
 
@@ -151,7 +151,7 @@ local generatecopy = macro(function(self, other)
     return quote
         escape
             if T.methods.__copy then
-                emit `self:__copy(other)
+                emit `self:__copy(&other)
             else
                 emit `S.copymembers(self, other)
             end
@@ -198,11 +198,11 @@ function S.Object(T)
         S.initmembers(@self)
     end
     terra T:copy(other: &T) : &T
-        generatecopy(@self, other)
+        generatecopy(@self, @other)
         return self
     end
     terra T:copymembers(other: &T)
-        S.copymembers(@self, other)
+        S.copymembers(@self, @other)
     end
 end
 
