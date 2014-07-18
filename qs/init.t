@@ -24,7 +24,6 @@ addExports(
 	"progmodule",
 	"infer",
 	"mcmc"
-	-- TODO: add more files
 )
 
 

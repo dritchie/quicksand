@@ -2,7 +2,7 @@ local S = {}
 
 S.memoize = terralib.memoize
 
---TODO: for speed we should just declare the methods we need directly using
+-- for speed we should just declare the methods we need directly using
 -- terra, but we need an API to do this
 local C = terralib.includecstring [[
 #include <stdio.h>
