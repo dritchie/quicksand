@@ -19,25 +19,6 @@ globals.dualnum = nil
 -- Defaults to globals.primfloat
 globals.real = globals.primfloat
 
--- A sample drawn from a probabilistic program.
--- Just bundles a program return value with a log probability (score).
-globals.Sample = S.memoize(function(T)
-	local struct Sample(S.Object)
-	{
-		value: T,
-		logprob: globals.primfloat
-	}
-	terra Sample:__init(val: T, lp: globals.primfloat) : {}
-		self.value = val
-		self.logprob = lp
-	end
-	terra Sample:__init(val: T) : {}
-		self.value = val
-		self.logprob = 0.0
-	end
-	return Sample
-end)
-
 
 return globals
 

@@ -6,6 +6,26 @@ local progmod = util.require("progmodule")
 local trace = util.require("trace")
 
 
+-- A sample drawn from a probabilistic program.
+-- Just bundles a program return value with a log probability (score).
+local Sample = S.memoize(function(T)
+	local struct Sample(S.Object)
+	{
+		value: T,
+		logprob: globals.primfloat
+	}
+	terra Sample:__init(val: T, lp: globals.primfloat) : {}
+		self.value = val
+		self.logprob = lp
+	end
+	terra Sample:__init(val: T) : {}
+		self.value = val
+		self.logprob = 0.0
+	end
+	return Sample
+end)
+
+
 -- Get the return type for a particular program
 local function ReturnType(program)
 	progmod.assertIsProgram(program, "SampleType")
@@ -15,7 +35,7 @@ end
 
 -- Get the sample type for a particular program
 local function SampleType(program)
-	return globals.Sample(ReturnType(program))
+	return Sample(ReturnType(program))
 end
 
 
@@ -230,6 +250,8 @@ end
 
 return
 {
+	ReturnType = ReturnType,
+	SampleType = SampleType,
 	exports = 
 	{
 		ReturnType = ReturnType,

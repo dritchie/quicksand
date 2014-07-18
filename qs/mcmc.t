@@ -6,6 +6,7 @@ local progmod = util.require("progmodule")
 local trace = util.require("trace")
 local random = util.require("lib.random")
 local tmath = util.require("lib.tmath")
+local infer = util.require("infer")
 
 local C = terralib.includecstring [[
 #include <stdio.h>
@@ -45,7 +46,7 @@ local function MCMC(kernel, params)
 		local TraceType = trace.RandExecTrace(program, globals.primfloat)
 		local KernelType = kernel(TraceType)
 
-		local terra doMCMC(samples: &S.Vector(SampleType(program)),
+		local terra doMCMC(samples: &S.Vector(infer.SampleType(program)),
 						   nsamps: uint64, burnin: uint64, lag: uint64, outstream: &C.FILE)
 			var verbose = (outstream ~= nil)
 			var iters = burnin + (nsamps*lag)
@@ -58,7 +59,7 @@ local function MCMC(kernel, params)
 					C.flushstderr()
 					if i == 1 then t0 = util.currentTimeInSeconds() end		-- Skip any one-time JIT costs
 				end
-				k:next(&currTrace)
+				k:next(currTrace)
 				if i >= burnin and i % lag == 0 then
 					samples:insert()
 					var s = samples:get(samples:size()-1)
@@ -74,7 +75,7 @@ local function MCMC(kernel, params)
 						emit quote
 							var pm = k:proposalsMade()
 							var pa = k:proposalsAccepted()
-							C.fprintf(outstream, "Acceptance ratio: %u/%u (%g%%)\n", pa, pm, 100.0*double(pa)/pm)
+							C.fprintf(outstream, "Acceptance Ratio: %u/%u (%g%%)\n", pa, pm, 100.0*double(pa)/pm)
 						end
 					end
 					if KernelType:getmethod("printStats") then
@@ -93,7 +94,7 @@ local function MCMC(kernel, params)
 				return `doMCMC(samples, _numsamps, _burnin, _lag, _verbose)
 			end)
 		else
-			return terra(samples: &S.Vector(SampleType(program)))
+			return terra(samples: &S.Vector(infer.SampleType(program)))
 				return doMCMC(samples, _numsamps, _burnin, _lag, _verbose)
 			end
 		end
@@ -144,7 +145,7 @@ local function TraceMHKernel(params)
 		end
 
 		terra Kernel:proposalsMade() return self.propsMade end
-		terra Kernel:proposalsAccepted() return self.proposalsAccepted end
+		terra Kernel:proposalsAccepted() return self.propsAccepted end
 
 		terra Kernel:next(currTrace: &TraceType)
 			self.propsMade = self.propsMade + 1

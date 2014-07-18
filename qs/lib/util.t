@@ -78,7 +78,7 @@ double __currentTimeInSeconds() {
 }
 #endif
 ]]
-U.__currentTimeInSeconds = timestuff.__currentTimeInSeconds
+U.currentTimeInSeconds = timestuff.__currentTimeInSeconds
 
 
 U.swap = macro(function(a, b)
