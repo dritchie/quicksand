@@ -4,6 +4,7 @@ local S = util.require("lib.std")
 local globals = util.require("globals")
 local progmod = util.require("progmodule")
 local trace = util.require("trace")
+local HashMap = util.require("lib.hashmap")
 
 
 -- A sample drawn from a probabilistic program.
@@ -247,6 +248,36 @@ function Autocorrelation(mean, variance)
 end
 
 
+-- Return a normalized histogram of return values for programs with
+--    discrete, hashable, comparable return types.
+-- Histogram is stored in a HashMap(ReturnType, qs.primfloat)
+-- IMPORTANT: Caller is responsible for the memory of the returned hash map.
+function Histogram(program)
+	local RetType = ReturnType(program)
+	if RetType:isstruct() then
+		assert(RetType:getmethod("__eq"),
+			"Histogram: struct return type of program must be comparable (have __eq defined)")
+		assert(RetType:getmethod("__hash"),
+			"Histogram: struct return type of program must be hashable (have __hash defined)")
+	end
+	local HistType = HashMap(RetType, globals.primfloat)
+	return terra(samples: &S.Vector(SampleType(program)))
+		var hist : HistType
+		hist:init()
+		for s in samples do
+			var countp, foundit = hist:getOrCreatePointer(s.value)
+			if not foundit then @countp = 0.0 end
+			@countp = @countp + 1.0
+		end
+		-- Normalize
+		for val,count in hist do
+			count = count / samples:size()
+		end
+		return hist
+	end
+end
+
+
 
 return
 {
@@ -262,7 +293,8 @@ return
 		Samples = Samples,
 		Expectation = Expectation,
 		MAP = MAP,
-		Autocorrelation = Autocorrelation
+		Autocorrelation = Autocorrelation,
+		Histogram = Histogram
 	}
 }
 
