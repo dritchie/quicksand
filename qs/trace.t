@@ -112,6 +112,10 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 	local struct RandomDBT(S.Object)
 	{
 		addressStack: &Address,
+		-- TODO: If we have lots of random choices happening deep in the call stack,
+		--    a hash table will end of storing a ton of redundant information (a complete
+		--    copy of the adddress stack for each key). Maybe experiment with tries instead?
+        --    (expected nlogn instead of constant lookup, though...)
 		choicemap: HashMap(Address, IndexedChoicesWithCounter, hashAddress),
 		choicelist: ChoicePointersWithCounter
 	}
@@ -150,7 +154,7 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 				-- Add a new random choice database entry
 				clist.choices:insert()
 				-- Initialize it
-				clist.choices(clist.choices:size()).choice:init([initArgs])
+				clist.choices(clist.choices:size()-1).choice:init([initArgs])
 			end
 			var ichoice = clist.choices:get(clist.counter)
 			-- Record the fact that we've hit this lexical position one more time
@@ -185,7 +189,7 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 	-- Clear out everything
 	terra RandomDBT:clear()
 		self.choicemap:clear()
-		self.choicelist:clear()
+		self.choicelist.pointers:clear()
 	end
 
 	-- Rebuild the flat list of random choice pointers.
@@ -199,7 +203,7 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 			-- This is a total abstraction violation, but it's the fastest way to do what I want...
 			self.choicelist.pointers._size = self.choicelist.counter
 			for addr,clist in self.choicemap do
-				for ichoice in clist do
+				for ichoice in clist.choices do
 					-- ichoice.index tells where in the execution order the choice was made.
 					self.choicelist.pointers(ichoice.index) = &ichoice.choice
 				end
@@ -221,7 +225,7 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 			self.choicelist.pointers:clear()
 			for addr,clist in self.choicemap do
 				clist.counter = 0
-				for rc in clist.choices do rc.active = false end
+				for irc in clist.choices do irc.choice.active = false end
 			end
 		end
 		-- Always: Reset the flat list index counter
@@ -234,11 +238,11 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 	terra RandomDBT:clearUnreachables()
 		var oldlp : RandomChoiceT.RealType = 0.0
 		for addr,clist in self.choicemap do
-			for i=[int64](clist:size()-1),-1,-1 do
-				if not clist(i).active then
-					oldlp = oldlp + clist(i).logprob
-					S.rundestructor(clist(i))
-					clist:remove(i)	-- Does not destruct; instead returns the removed value
+			for i=[int64](clist.choices:size()-1),-1,-1 do
+				if not clist.choices(i).choice.active then
+					oldlp = oldlp + clist.choices(i).choice.logprob
+					S.rundestructor(clist.choices(i))
+					clist.choices:remove(i)	-- Does not destruct; instead returns the removed value
 					i = i + 1
 				end
 			end
@@ -266,7 +270,9 @@ end)
 -- We create one global pointer variable for every type of trace that gets created
 -- When doing inference, the appropriate one of these points to the 'currently executing trace'
 -- (This is a map from trace type to global pointer variable)
-local globalTracePointers = {}
+local globalTracePointer = S.memoize(function(TraceType)
+	return global(&TraceType, 0)	-- 0 for nil literal
+end)
 
 
 -- Memoize a function on a predicate. A predicate is either a function taking one argument
@@ -326,7 +332,8 @@ end
 
 
 -- The trace type itself
-local RandExecTrace = S.memoize(function(program, real)
+local RandExecTrace
+local _RandExecTrace = S.memoize(function(program, real)
 
 	-- Compile the program
 	-- (This is an asynchronous operation that will not finish until this type constructor
@@ -362,8 +369,7 @@ local RandExecTrace = S.memoize(function(program, real)
 	end
 
 	-- Create the global pointer variable for this trace type
-	local gTrace = global(&RandExecTraceT, 0)
-	globalTracePointers[RandExecTraceT] = gTrace
+	local gTrace = globalTracePointer(RandExecTraceT)
 
 	terra RandExecTraceT:__init()
 		self.logprob = 0.0
@@ -501,13 +507,13 @@ local RandExecTrace = S.memoize(function(program, real)
 	-- These two 'filter' functions allow the caller to get the number of random choices
 	--    whose type matches some predicate, or to retrieve such a random choice by index.
 
-	local RandExecTraceT.countChoices = memoizeOnPredicate(function(predfn)
+	RandExecTraceT.countChoices = memoizeOnPredicate(function(predfn)
 		return terra(self: &RandExecTraceT)
 			var count: uint64 = 0
 			escape
 				for _,rct in ipairs(rcTypesUsed) do
 					if predfn(rct) then
-						emit quote count = count + [rdbForType(self, rct)]:countChoices()
+						emit quote count = count + [rdbForType(self, rct)]:countChoices() end
 					end
 				end
 			end
@@ -515,7 +521,7 @@ local RandExecTrace = S.memoize(function(program, real)
 		end
 	end)
 
-	local RandExecTraceT.getChoice = memoizeOnPredicate(function(predfn)
+	RandExecTraceT.getChoice = memoizeOnPredicate(function(predfn)
 
 		-- What we return from this function is a proxy object that forwards
 		--    all method calls to the appropriate random choice
@@ -582,6 +588,16 @@ local RandExecTrace = S.memoize(function(program, real)
 	return RandExecTraceT
 
 end)
+-- IMPORTANT: Due to the recursive nature of probabilistic program compilation (i.e. the same
+--    recursive dependency that requires us to do some asynchronous compile calls), we need to
+--    compile programs before we enter any trace type constructors that refer to them.
+-- Otherwise, the type constructor ends up being called recursively, and we'll get a trace type whose
+--    'tprog' function was compiled to refer to a different instantiation of what should be the
+--    same trace type.
+RandExecTrace = function(program, real)
+	program:compile()
+	return _RandExecTrace(program, real)
+end
 
 
 local function GlobalTraceType()
@@ -594,7 +610,7 @@ end
 --    a particular program type.
 local function globalTrace()
 	local RandExecTraceT = GlobalTraceType()
-	local gTrace = globalTracePointers[RandExecTraceT]
+	local gTrace = globalTracePointer(RandExecTraceT)
 	assert(gTrace,
 		"'globalTrace()'' could not find a global trace pointer for the current program trace type. This should be impossible...")
 	return gTrace
@@ -606,6 +622,55 @@ local function isRecordingTrace()
 	return `[globalTrace()] ~= nil
 end
 
+
+-- Look up random choice value in the currently-executing trace
+-- Non-POD values are returned by pointer
+local function lookupRandomChoiceValue(RandomChoiceT, args, ctoropts, updateopts)
+	-- If we're doing the random choice type detection compiler pass, then we
+	--    record the use of this type
+	if rcTypeDetectionPass then
+		rcTypesUsed:insert(RandomChoiceT)
+	end
+	local ValType = RandomChoiceT.ValueType
+	return quote
+		var val : ValType
+		-- Only proceed with trace lookup if we're past the type detection pass
+		escape
+			if not rcTypeDetectionPass then
+				emit quote
+					-- If we're currently in a trace update execution, look up the choice value from the
+					--    currently-executing trace.
+					if [isRecordingTrace()] then
+						var rc, foundit = [GlobalTraceType().lookupRandomChoice(globalTrace(), RandomChoiceT, args, ctoropts)]
+						-- If this choice was retrieved, not created, then we should check if
+						--    the prior probability etc. need to be updated
+						if foundit then
+							rc:update([args], [updateopts])
+						end
+						-- Regardless, we need to increment the trace's log probability
+						[globalTrace()].logprob = [globalTrace()].logprob + rc.logprob
+
+						-- Retrieve and copy the value of the random choice we found/created
+						S.copy(val, rc:getValue())
+					else
+						-- If this is not part of a trace execution, just draw a forward sample
+						val = [RandomChoiceT.sampleFunction]([args])
+					end
+					-- defer destruct if ValueType has a destructor
+					escape
+						if ValType:isstruct() and ValType:getmethod("destruct") then
+							emit quote defer val:destruct() end
+						end
+					end
+				end
+			end
+		end
+	in
+		-- Return pointer-to-struct, in keeping with salloc() convention,
+		--    if ValType is non-POD
+		[util.isPOD(RandomChoiceT.ValueType) and (`val) or (`&val)]
+	end
+end
 
 
 -----------------------------------------------------
@@ -698,55 +763,6 @@ end
 ---       Public interface        ---
 -------------------------------------
 
-
--- Look up random choice value in the currently-executing trace
--- Non-POD values are returned by pointer
-local function lookupRandomChoiceValue(RandomChoiceT, args, ctoropts, updateopts)
-	-- If we're doing the random choice type detection compiler pass, then we
-	--    record the use of this type
-	if rcTypeDetectionPass then
-		rcTypesUsed:insert(RandomChoiceT)
-	end
-	local ValType = RandomChoiceT.ValueType
-	return quote
-		var val : ValType
-		-- Only proceed with trace lookup if we're past the type detection pass
-		escape
-			if not rcTypeDetectionPass then
-				emit quote
-					-- If we're currently in a trace update execution, look up the choice value from the
-					--    currently-executing trace.
-					if [isRecordingTrace()] then
-						var rc, foundit = [GlobalTraceType().lookupRandomChoice(globalTrace(), RandomChoiceT, args, ctoropts)]
-						-- If this choice was retrieved, not created, then we should check if
-						--    the prior probability etc. need to be updated
-						if foundit then
-							rc:update([args], [updateopts])
-						end
-						-- Regardless, we need to increment the trace's log probability
-						[globalTrace()].logprob = [globalTrace()].logprob + rc.logprob
-
-						-- Retrieve and copy the value of the random choice we found/created
-						S.copy(val, rc:getValue())
-					else
-						-- If this is not part of a trace execution, just draw a forward sample
-						val = [RandomChoiceT.sampleFunction]([args])
-					end
-					-- defer destruct if ValueType has a destructor
-					escape
-						if ValType:isstruct() and ValType:getmethod("destruct") then
-							emit quote defer val:destruct() end
-						end
-					end
-				end
-			end
-		end
-	in
-		-- Return pointer-to-struct, in keeping with salloc() convention,
-		--    if ValType is non-POD
-		[util.isPOD(RandomChoiceT.ValueType) and (`val) or (`&val)]
-	end
-end
 
 -- 'factor' and 'factorfunc' allow direct increment of the currently-executing trace's log probability
 -- 'factor' takes the logprob increment amount directly

@@ -74,7 +74,7 @@ local function MCMC(kernel, params)
 						emit quote
 							var pm = k:proposalsMade()
 							var pa = k:proposalsAccepted()
-							C.fprintf(outstream, "Acceptance ratio: %u/%u (%g\%)\n", pa, pm, 100.0*double(pa)/pm)
+							C.fprintf(outstream, "Acceptance ratio: %u/%u (%g%%)\n", pa, pm, 100.0*double(pa)/pm)
 						end
 					end
 					if KernelType:getmethod("printStats") then

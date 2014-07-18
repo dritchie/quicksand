@@ -6,12 +6,16 @@ local progmod = util.require("progmodule")
 local trace = util.require("trace")
 
 
+-- Get the return type for a particular program
+local function ReturnType(program)
+	progmod.assertIsProgram(program, "SampleType")
+	local tfn, RetType = program:compile()
+	return RetType
+end
 
 -- Get the sample type for a particular program
 local function SampleType(program)
-	progmod.assertIsProgram(program, "SampleType")
-	local tfn, RetType = program:compile()
-	return globals.Sample(RetType)
+	return globals.Sample(ReturnType(program))
 end
 
 
@@ -93,7 +97,7 @@ function Samples(program)
 	progmod.assertIsProgram(program, "Samples")
 	return terra(samples: &S.Vector(SampleType(program)))
 		-- Need to copy, since we don't have ownership of 'samples'
-		var retsamps : [S.Vector(SampleType(program))]
+		var retsamps : S.Vector(SampleType(program))
 		retsamps:copy(samples)
 		return retsamps
 	end
@@ -107,6 +111,7 @@ end
 --    * The scalar "/" operator
 -- IMPORTANT: Caller is responsible for the memory of the returned mean object.
 function Expectation(doVariance)
+	if doVariance == nil then doVariance = false end
 	return function(program)
 		progmod.assertIsProgram(program, "Expectation")
 		local tfn, RetType = program:compile()
@@ -115,7 +120,7 @@ function Expectation(doVariance)
 		local AccumType = (RetType:isintegral() or RetType:islogical()) and globals.primfloat or RetType
 		return terra(samples: &S.Vector(SampleType(program)))
 			S.assert(samples:size() > 0)
-			var m = AccumType(samples(0))
+			var m = AccumType(samples(0).value)
 			for s in samples do
 				var _m = m
 				m = m + s.value
@@ -149,17 +154,17 @@ end
 function MAP(program)
 	progmod.assertIsProgram(program, "MAP")
 	return terra(samples: &S.Vector(SampleType(program)))
-		var bestVal : &SampleType(program)
-		var bestScore : globals.primfloat = [-math.huge]
+		S.assert(samples:size() > 0)
+		var bestSamp = samples:get(0)
 		for s in samples do
-			if s.logprob > bestScore then
-				bestScore = s.logprob
-				bestVal = &s.value
+			-- S.printf("%g\n", s.logprob)
+			if s.logprob > bestSamp.logprob then
+				bestSamp = &s
 			end
 		end
-		var retval : SampleType(program)
-		retval:copy(bestVal)
-		return retval
+		var retsamp : SampleType(program)
+		retsamp:copy(bestSamp)
+		return retsamp.value
 	end
 end
 
@@ -169,13 +174,15 @@ end
 -- 'mean' and 'variance' can be Lua constants or Terra quotes
 -- IMPORTANT: Caller is responsible for the memory of the returned vector.
 function Autocorrelation(mean, variance)
-	assert((mean or variance) and (mean and variance),
-		"Autocorrelation: both mean and variance must be provided if one is provided.")
+	if mean or variance then
+		assert(mean and variance,
+			"Autocorrelation: both mean and variance must be provided if one is provided.")
+	end
 	return function(program)
 		progmod.assertIsProgram(program, "MAP")
 
 		local terra withMeanAndVar(samples: &S.Vector(SampleType(program)),
-								   m: SampleType(program), v: globals.primfloat)
+								   m: ReturnType(program), v: globals.primfloat)
 			var ac : S.Vector(globals.primfloat)
 			ac:init()
 			for t=0,samples:size() do
@@ -183,7 +190,7 @@ function Autocorrelation(mean, variance)
 				var n = samples:size() - t
 				for i=0,n do
 					var tmp1 = samples(i).value - m
-					var tmp2 = samples(i+t) - m
+					var tmp2 = samples(i+t).value - m
 					act = act + tmp1*tmp2
 					S.rundestructor(tmp1)
 					S.rundestructor(tmp2)
@@ -225,6 +232,7 @@ return
 {
 	exports = 
 	{
+		ReturnType = ReturnType,
 		SampleType = SampleType,
 		infer = infer,
 		ForwardSample = ForwardSample,

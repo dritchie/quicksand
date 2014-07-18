@@ -9,6 +9,13 @@ local expandFactor = 2
 local loadFactor = 2.0
 
 
+-- NOTE: In all use cases, we assume that:
+--    * Keys should be copied if they are ever to be stored (since whether a key is found
+--      or created/stored is unpredictable/unknowable for some methods).
+--    * Values should not be copied (i.e. the user is handing off
+--       ownership of that memory to us).
+
+
 local HM = S.memoize(function(K, V, hashfn)
 
 	hashfn = hashfn or hash.gethashfn(K)
@@ -21,13 +28,13 @@ local HM = S.memoize(function(K, V, hashfn)
 	}
 
 	terra HashCell:__init(k: K, v: V)
-		self.key = k
+		S.copy(self.key, k)
 		self.val = v
 		self.next = nil
 	end
 
 	terra HashCell:__init(k: K)
-		self.key = k
+		S.copy(self.key, k)
 		S.init(self.val)
 		self.next = nil
 	end
