@@ -346,6 +346,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 		logprob: real,
 		newlogprob: real,
 		oldlogprob: real,
+		temperature: real,
 		conditionsSatisfied: bool,
 		returnValue: RetType,
 		-- This starts out false, but is forever after set to true as soon as :update() is run
@@ -375,6 +376,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 		self.logprob = 0.0
 		self.newlogprob = 0.0
 		self.oldlogprob = 0.0
+		self.temperature = 1.0
 		self.conditionsSatisfied = false
 		self.hasReturnValue = false
 
@@ -415,6 +417,11 @@ local _RandExecTrace = S.memoize(function(program, real)
 			end
 		end
 	end
+
+	terra RandExecTraceT:setTemperature(temp: real)
+		self.temperature = temp
+	end
+	RandExecTraceT.methods.setTemperature:setinlined(true)
 
 	local nextAddress = 0
 	RandExecTraceT.methods.pushAddressStack = macro(function(self)
@@ -487,6 +494,11 @@ local _RandExecTrace = S.memoize(function(program, real)
 		if self.hasReturnValue then S.rundestructor(self.returnValue) end
 		self.returnValue = tprog()
 		self.hasReturnValue = true
+
+		-- Adjust logprobs by temperature
+		self.logprob = self.logprob / self.temperature
+		self.newlogprob = self.newlogprob / self.temperature
+		self.oldlogprob = self.oldlogprob / self.temperature
 
 		-- If structural, clear out unreachable variables from rdbs
 		if canStructureChange then

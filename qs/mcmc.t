@@ -5,6 +5,7 @@ local globals = util.require("globals")
 local progmod = util.require("progmodule")
 local trace = util.require("trace")
 local random = util.require("lib.random")
+local distrib = util.require("distrib")
 local tmath = util.require("lib.tmath")
 local infer = util.require("infer")
 
@@ -59,7 +60,7 @@ local function MCMC(kernel, params)
 					C.flushstderr()
 					if i == 1 then t0 = util.currentTimeInSeconds() end		-- Skip any one-time JIT costs
 				end
-				k:next(currTrace)
+				k:next(currTrace, i, iters)
 				if i >= burnin and i % lag == 0 then
 					samples:insert()
 					var s = samples:get(samples:size()-1)
@@ -133,21 +134,21 @@ local function TraceMHKernel(params)
 
 	return function(TraceType)
 		
-		local struct Kernel(S.Object)
+		local struct TraceMHKernel(S.Object)
 		{
 			propsMade: uint64,
 			propsAccepted: uint64
 		}
 
-		terra Kernel:__init()
+		terra TraceMHKernel:__init()
 			self.propsMade = 0
 			self.propsAccepted = 0
 		end
 
-		terra Kernel:proposalsMade() return self.propsMade end
-		terra Kernel:proposalsAccepted() return self.propsAccepted end
+		terra TraceMHKernel:proposalsMade() return self.propsMade end
+		terra TraceMHKernel:proposalsAccepted() return self.propsAccepted end
 
-		terra Kernel:next(currTrace: &TraceType)
+		terra TraceMHKernel:next(currTrace: &TraceType, iter: uint, numiters: uint)
 			self.propsMade = self.propsMade + 1
 			-- Make a copy of the current trace which we use to evaluate our proposal
 			var nextTrace = TraceType.salloc():copy(currTrace)
@@ -174,12 +175,133 @@ local function TraceMHKernel(params)
 			end
 		end
 
-		return Kernel
+		return TraceMHKernel
 	end
 end
 
 
--- TODO: MultiKernel, SchedulingKernel (, DriftKernel?)
+-- Stochastically chooses between multiple different MCMC kernels
+-- The kernel selection weights can be constants or quotes
+-- Both are collected in Lua tables.
+local function MixtureKernel(kernels, weights)
+	assert(#kernels == #weights,
+		"MixtureKernel: number of kernels must equal number of weights")
+	kernels = terralib.newlist(kernels)
+	weights = terralib.newlist(weights)
+	return function(TraceType)
+		local skernels = kernels:map(function(k) return k(TraceType) end)
+		
+		local struct MixtureKernel(S.Object)
+		{
+			weights: qs.primfloat[ #weights ]
+		}
+		-- Insert an entry for every sub-kernel
+		local function kernelEntry(i) return string.format("kernel%d", i-1) end
+		for i,k in ipairs(skernels) do
+			MixtureKernel.entries:insert({name=kernelEntry(i), type=k})
+		end
+
+		local weightsyms = weights:map(function(w) return symbol(qs.primfloat) end)
+		terra MixtureKernel:__doinit([weightsyms])
+			self:initmembers()
+			escape
+				for i,w in ipairs(weightsyms) do
+					emit quote self.weights[ [i-1] ] = [w] end
+				end
+			end
+		end
+
+		MixtureKernel.methods.__init = macro(function(self)
+			return `self:__doinit([weights])
+		end)
+
+		terra MixtureKernel:proposalsMade()
+			var total : uint64 = 0
+			escape
+				for i,k in ipairs(skernels) do
+					if k:getmethod("proposalsMade") then
+						emit quote total = total + self.[kernelEntry(i)]:proposalsMade() end
+					end
+				end
+			end
+			return total
+		end
+
+		terra MixtureKernel:proposalsAccepted()
+			var total : uint64 = 0
+			escape
+				for i,k in ipairs(skernels) do
+					if k:getmethod("proposalsAccepted") then
+						emit quote total = total + self.[kernelEntry(i)]:proposalsAccepted() end
+					end
+				end
+			end
+			return total
+		end
+
+		-- Print out acceptance ratio for all sub-kernels
+		terra MixtureKernel:printStats(outstream: &C.FILE)
+			escape
+				for i,k in ipairs(skernels) do
+					if k:getmethod("proposalsMade") and k:getmethod("proposalsAccepted") then
+						emit quote
+							var pm = self.[kernelEntry(i)]:proposalsMade()
+							var pa = self.[kernelEntry(i)]:proposalsAccepted()
+							C.fprintf(outstream, "   %s Acceptance Ratio: %u/%u (%g%%)\n", [tostring(k)], pa, pm, 100.0*double(pa)/pm)
+						end
+					end
+				end
+			end
+		end
+
+		terra MixtureKernel:next(currTrace: &TraceType, iter: uint, numiters: uint)
+			var randindex = [distrib.multinomial_array(#weights)(qs.primfloat)].sample(self.weights)
+			escape
+				for i,k in ipairs(skernels) do
+					emit quote
+						if randindex == [i-1] then
+							self.[kernelEntry(i)]:next(currTrace)
+							return
+						end
+					end
+				end
+			end
+		end
+
+	end
+end
+
+
+-- Run the simulated annealing meta-inference algorithm on top of another MCMC kernel
+-- 'annealSched' can be any Terra function or macro that takes in two ints (curr iteration
+--     + total number of iterations) and returns a qs.primfloat
+local function AnnealingKernel(kernel, annealSched)
+	return function(TraceType)
+		local skernel = kernel(TraceType)
+
+		local struct AnnealingKernel(S.Object)
+		{
+			k: skernel
+		}
+
+		terra AnnealingKernel:next(currTrace: &TraceType, iter: uint, numiters: uint)
+			currTrace:setTemperature(annealSched(iter, numiters))
+			self.k:next(currTrace, iter, numiters)
+		end
+
+		-- Forward all other method calls (e.g. printStats) to inner kernel
+		function AnnealingKernel.metamethods.__methodmissing(methodname, self, ...)
+			local args = {...}
+			return `self.k:[methodname]([args])
+		end
+
+	end
+end
+
+
+
+-- TODO: DriftKernel?
+
 
 
 return
@@ -187,7 +309,9 @@ return
 	exports = 
 	{
 		MCMC = MCMC,
-		TraceMHKernel = TraceMHKernel
+		TraceMHKernel = TraceMHKernel,
+		MixtureKernel = MixtureKernel,
+		AnnealingKernel = AnnealingKernel
 	}
 }
 
