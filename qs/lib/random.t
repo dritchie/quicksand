@@ -9,6 +9,12 @@ void initrand_() { srand(time(NULL)); }
 local R = {}
 
 R.random = CRand.random_
-R.initrand = CRand.initrand_
+
+terra R.initrand(seed: uint)
+	CRand.srand(seed)
+end
+terra R.initrand()
+	CRand.initrand_()
+end
 
 return R
