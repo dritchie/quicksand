@@ -50,7 +50,11 @@ local function stringsplit(self, sep)
 end
 function U.require(name)
 	local callermodule = debug.getinfo(2, "S").source:gsub("@", ""):gsub("%.t", "")
-	local parts = stringsplit(callermodule, "/")
+	local rawparts = stringsplit(callermodule, "/")
+	local parts = terralib.newlist()
+	for _,p in ipairs(rawparts) do
+		if p ~= "." then parts:insert(p) end
+	end
 	local path = name
 	if #parts > 1 then
 		path = parts[1]
