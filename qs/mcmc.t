@@ -92,11 +92,11 @@ local function MCMC(kernel, params)
 		for _,v in pairs(params) do anyquotes = anyquotes or terralib:isquote(v) end
 		if anyquotes then
 			return macro(function(samples)
-				return `doMCMC(samples, _numsamps, _burnin, _lag, _verbose)
+				return `doMCMC(samples, _numsamps, _burnin, _lag, [&C.FILE](_verbose))
 			end)
 		else
 			return terra(samples: &S.Vector(infer.SampleType(program)))
-				return doMCMC(samples, _numsamps, _burnin, _lag, _verbose)
+				return doMCMC(samples, _numsamps, _burnin, _lag, [&C.FILE](_verbose))
 			end
 		end
 	end

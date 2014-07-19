@@ -87,7 +87,8 @@ local _runs = 5
 local _errtol = 0.07
 
 -- Check that a computed expected value is close enough to a known true value
-local function expectedValueTest(prog, trueExp, method, optparams)
+local function expectedValueTest(name, prog, trueExp, method, optparams)
+	io.write(string.format("test: %s...", name))
 	testsRun:set(testsRun:get() + 1)
 
 	optparams = optparams or {}
@@ -100,7 +101,7 @@ local function expectedValueTest(prog, trueExp, method, optparams)
 		methodfn = method(numsamps)
 	elseif method == qs.MCMC then
 		local kernel = optparams.kernel or qs.TraceMHKernel()
-		params = {numsamps=numsamps, lag=(optparams.lag or _lag)}
+		local params = {numsamps=numsamps, lag=(optparams.lag or _lag)}
 		methodfn = method(kernel, params)
 	end
 	local inferfn = qs.infer(prog, qs.Expectation(), methodfn)
@@ -123,6 +124,13 @@ local function expectedValueTest(prog, trueExp, method, optparams)
 		print("passed.")
 		testsPassed:set(testsPassed:get() + 1)
 	end
+end
+
+-- Run an expected value test on a program for all three methods
+local function multiMethodExpectedValueTest(name, prog, trueExp, optparams)
+	expectedValueTest(name .. " (forward)", prog, trueExp, qs.ForwardSample, optparams)
+	expectedValueTest(name .. " (reject)", prog, trueExp, qs.WeightedRejectionSample, optparams)
+	expectedValueTest(name .. " (mcmc)", prog, trueExp, qs.MCMC, optparams)
 end
 
 -----------------------------------------------------------------------------------------
@@ -163,6 +171,49 @@ local terra testLogprobFunctions()
 	assertEq("dirichlet lp (2)", [D.dirichlet_vector(double)].logprob(dv, dp), 0.693147180559945)
 end
 testLogprobFunctions()
+
+
+multiMethodExpectedValueTest(
+"flip expectation",
+qs.program(function()
+	return terra()
+		return qs.flip(0.7, {struc=false})
+	end
+end), 0.7)
+
+multiMethodExpectedValueTest(
+"uniform expectation",
+qs.program(function()
+	return terra()
+		return qs.uniform(0.1, 0.4, {struc=false})
+	end
+end), 0.5*(.1+.4))
+
+multiMethodExpectedValueTest(
+"multinomial expectation (1)",
+qs.program(function()
+	return terra()
+		var items = array(0.2, 0.3, 0.4)
+		return items[qs.multinomial(array(0.2, 0.6, 0.2), {struc=false})]
+	end
+end), 0.2*.2 + 0.6*.3 + 0.2*.4)
+
+multiMethodExpectedValueTest(
+"multinomial expectation (2)",
+qs.program(function()
+	return terra()
+		var items = array(0.2, 0.3, 0.4)
+		var params = [S.Vector(double)].salloc():init()
+		-- var params : S.Vector(double); params:init()
+		params:insert(0.2); params:insert(0.6); params:insert(0.2)
+		-- var index = qs.multinomial(params, {struc=false})
+		-- return items[index]
+		return items[qs.multinomial(params, {struc=false})]
+	end
+end), 0.2*.2 + 0.6*.3 + 0.2*.4)
+
+
+
 
 if testsPassed:get() == testsRun:get() then
 	print(string.format("all %d tests passed!", testsRun:get()))

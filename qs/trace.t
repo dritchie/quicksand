@@ -444,29 +444,29 @@ local _RandExecTrace = S.memoize(function(program, real)
 
 	-- Also returns a boolean indicating whether the random choice was
 	--    retrieved or created.
-	function RandExecTraceT.lookupRandomChoice(self, RCType, args, ctoropts)
-		local initArgs = terralib.newlist()
-		for _,a in ipairs(args) do initArgs:insert(a) end
-		for _,a in ipairs(ctoropts) do initArgs:insert(a) end
-		local initArgsTmp = initArgs:map(function(a) return symbol(a:gettype()) end)
-		return quote
-			var x : &RCType
-			var foundit = true
-			if not self.canStructureChange then
-				x = [rdbForType(self, RCType)]:lookupNonStructural()
-			else
-				var [initArgsTmp] = [initArgs]
-				self:pushAddressStack()
-				x, foundit = [rdbForType(self, RCType)]:lookupStructural([initArgsTmp])
-				self:popAddressStack()
-				if not foundit then
-					-- Increment self.newlogprob, since we just created a new random choice
-					self.newlogprob = self.newlogprob + x.logprob
+	function RandExecTraceT.lookupRandomChoice(RCType)
+		return macro(function(self, ...)
+			local initArgs = terralib.newlist({...})
+			local initArgsTmp = initArgs:map(function(a) return symbol(a:gettype()) end)
+			return quote
+				var x : &RCType
+				var foundit = true
+				if not self.canStructureChange then
+					x = [rdbForType(self, RCType)]:lookupNonStructural()
+				else
+					var [initArgsTmp] = [initArgs]
+					self:pushAddressStack()
+					x, foundit = [rdbForType(self, RCType)]:lookupStructural([initArgsTmp])
+					self:popAddressStack()
+					if not foundit then
+						-- Increment self.newlogprob, since we just created a new random choice
+						self.newlogprob = self.newlogprob + x.logprob
+					end
 				end
+			in
+				x, foundit
 			end
-		in
-			x, foundit
-		end
+		end)
 	end
 
 	terra RandExecTraceT:update(canStructureChange: bool)
@@ -653,7 +653,7 @@ local function lookupRandomChoiceValue(RandomChoiceT, args, ctoropts, updateopts
 					-- If we're currently in a trace update execution, look up the choice value from the
 					--    currently-executing trace.
 					if [isRecordingTrace()] then
-						var rc, foundit = [GlobalTraceType().lookupRandomChoice(globalTrace(), RandomChoiceT, args, ctoropts)]
+						var rc, foundit = [GlobalTraceType().lookupRandomChoice(RandomChoiceT)]([globalTrace()], [args], [ctoropts])
 						-- If this choice was retrieved, not created, then we should check if
 						--    the prior probability etc. need to be updated
 						if foundit then

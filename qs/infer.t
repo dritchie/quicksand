@@ -144,7 +144,7 @@ function Expectation(doVariance)
 			var m = AccumType(samples(0).value)
 			for s in samples do
 				var _m = m
-				m = m + s.value
+				m = m + AccumType(s.value)
 				S.rundestructor(_m)
 			end
 			var _m = m
@@ -155,7 +155,7 @@ function Expectation(doVariance)
 					emit quote
 						var v : globals.primfloat = 0.0
 						for s in samples do
-							var diff = s.value - m
+							var diff = AccumType(s.value) - m
 							v = v + diff*diff
 							S.rundestructor(diff)
 						end

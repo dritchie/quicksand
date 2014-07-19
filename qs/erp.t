@@ -57,7 +57,7 @@ local Options = {
 	LowerBound = "lo",		-- lower bound on the variable's value
 	UpperBound = "hi",		-- upper bound on the variable's value
 }
--- The Structural option must have a constant (i.e. true or false) value
+-- The Structural option must have a compile-time constant (i.e. true or false) value
 local function getStructuralOption(s)
 	-- All variables are structural by default
 	if not s then return true end
@@ -71,8 +71,12 @@ local function getStructuralOption(s)
 	end
 	if index > 0 then
 		local value = s.tree.expression.expressions[index].value
-		assert(value ~= nil and (value==true or value==false),
-			string.format("'%s' option for a random choice must be a boolean constant", Options.Structural))
+		assert(value ~= nil and (type(value) == "boolean" or type(value.object) == "cdata"),
+			string.format("'%s' option for a random choice must be a boolean compile-time constant", Options.Structural))
+		if type(value) ~= "boolean" then
+			local num = tonumber(value.object)
+			if num == 0 then value = false else value = true end
+		end
 		return value
 	else
 		-- All variables are structural by default
@@ -462,6 +466,7 @@ return
 	Options = Options,
 	BoundState = BoundState,
 	structHasMember = structHasMember,
+	getStructuralOption = getStructuralOption,
 	exports = 
 	{
 		makeRandomChoice = makeRandomChoice

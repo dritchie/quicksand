@@ -13,38 +13,26 @@ local globals = util.require("globals")
 local function insertBounds(opts, lo, hi)
 	local LO = erp.Options.LowerBound
 	local HI = erp.Options.UpperBound
+	local INIT = erp.Options.InitialValue
+	local STRUC = erp.Options.Structural
+
 	if not opts then
 		if lo and hi then return `{[LO]=lo, [HI]=hi} end
 		if lo then return `{[LO]=lo} end
 		if hi then return `{[HI]=hi} end
 	end
-	local T = opts:gettype()
-	local thaslo = false
-	local thashi = false
-	local struct NewT {}
-	for _,e in ipairs(T.entries) do
-		NewT.entries:insert({field=e.field, type=e.type})
-		if e.field == LO then thaslo = true end
-		if e.field == HI then thashi = true end
-	end
-	if lo and not thaslo then
-		NewT.entries:insert({field=LO, type=globals.real})
-	end
-	if hi and not thashi then
-		NewT.entries:insert({field=HI, type=globals.real})
-	end
-	return quote
-		var newopts = NewT(opts)
-		escape
-			if lo and not thaslo then
-				emit quote newopts.[LO] = lo end
-			end
-			if hi and not thashi then
-				emit quote newopts.[HI] = hi end
-			end
-		end
-	in
-		newopts
+
+	local struc = erp.getStructuralOption(opts)
+	local loval = (erp.structHasMember(opts, LO) and `opts.[LO]) or lo
+	local hival = (erp.structHasMember(opts, HI) and `opts.[HI]) or hi
+	if erp.structHasMember(opts, INIT) then
+		if loval and hival then return `{[INIT]=opts.[INIT], [STRUC]=struc, [LO]=loval, [HI]=hival} end
+		if loval then return `{[INIT]=opts.[INIT], [STRUC]=struc, [LO]=loval} end
+		if hival then return `{[INIT]=opts.[INIT], [STRUC]=struc, [HI]=hival} end
+	else
+		if loval and hival then return `{[STRUC]=struc, [LO]=loval, [HI]=hival} end
+		if loval then return `{[STRUC]=struc, [LO]=loval} end
+		if hival then return `{[STRUC]=struc, [HI]=hival} end
 	end
 end
 
@@ -196,7 +184,7 @@ ERPs.multinomial = macro(function(params, opts)
 	elseif T == &S.Vector(globals.real) then
 		return `multinomial_vector(params, opts)
 	else
-		error("multinomial params must be an array or Vector of reals")
+		error("multinomial params must be an array or &Vector of reals")
 	end
 end)
 ERPs.multinomial.observe = macro(function(val, params, opts)
@@ -207,7 +195,7 @@ ERPs.multinomial.observe = macro(function(val, params, opts)
 	elseif T == &S.Vector(globals.real) then
 		return `multinomial_vector(val, params, opts)
 	else
-		error("multinomial params must be an array or Vector of reals")
+		error("multinomial params must be an array or &Vector of reals")
 	end
 end)
 
@@ -230,7 +218,7 @@ ERPs.dirichlet = macro(function(params, opts)
 	elseif T == &S.Vector(globals.real) then
 		return `dirichlet_vector(params, opts)
 	else
-		error("dirichlet params must be an array or Vector of reals")
+		error("dirichlet params must be an array or &Vector of reals")
 	end
 end)
 ERPs.dirichlet.observe = macro(function(val, params, opts)
@@ -241,7 +229,7 @@ ERPs.dirichlet.observe = macro(function(val, params, opts)
 	elseif T == &S.Vector(globals.real) then
 		return `dirichlet_vector(val, params, opts)
 	else
-		error("dirichlet params must be an array or Vector of reals")
+		error("dirichlet params must be an array or &Vector of reals")
 	end
 end)
 
