@@ -305,7 +305,8 @@ function S.Vector(T,debug)
     Vector.methods.__copy = terra(self: &Vector, other: &Vector) : {}
         self:__init(other:size())
         for i=0,other:size() do
-            self:insert(other(i))
+            self:insert()
+            S.copy(self(i), other(i))
         end
     end
 

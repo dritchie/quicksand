@@ -204,10 +204,7 @@ qs.program(function()
 	return terra()
 		var items = array(0.2, 0.3, 0.4)
 		var params = [S.Vector(double)].salloc():init()
-		-- var params : S.Vector(double); params:init()
 		params:insert(0.2); params:insert(0.6); params:insert(0.2)
-		-- var index = qs.multinomial(params, {struc=false})
-		-- return items[index]
 		return items[qs.multinomial(params, {struc=false})]
 	end
 end), 0.2*.2 + 0.6*.3 + 0.2*.4)
