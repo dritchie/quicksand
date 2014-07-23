@@ -490,12 +490,62 @@ qs.program(function()
 		end
 		return accum / 4.0
 	end
-end), 0.5, qs.MCMC)
+end), 0.5, qs.MCMC)	
 
 
+-- Module tests
 
+local mod = qs.module(function()
+	local g = qs.func(terra(m: qs.real, sd: qs.real)
+		return qs.gaussian(m, sd, {struc=false}) 
+	end)
+	return { g = g }
+end)
 
--- TODO: qs.module
+expectedValueTest(
+"module use expectation",
+qs.program(function()
+	local m = mod:open()
+	return terra()
+		return m.g(0.1, 0.5)
+	end
+end), 0.1, qs.MCMC)	
+
+failToCompileTest(
+"module.open error",
+function()
+	local p = qs.program(function()
+		local m = mod:open()
+		return terra()
+			return m.g(0.1, 0.5)
+		end
+	end)
+	local m = mod:open()
+end)
+
+compileAndRunTest(
+"module.openAs compile and run",
+function()
+	local p = qs.program(function()
+		local m = mod:open()
+		return terra()
+			return m.g(0.1, 0.5)
+		end
+	end)
+	local m = mod:openAs(p)
+end)
+
+failToCompileTest(
+"module.openAs error",
+function()
+	local p = qs.program(function()
+		return terra()
+			return qs.flip(0.5)
+		end
+	end)
+	local m = mod:openAs(p)
+end)
+
 
 
 

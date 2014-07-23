@@ -89,28 +89,35 @@ end
 --    be used instead. This is because the compilation process for probabilistic
 --    code is specialized to the program using that code.
 
-local function modCacheLookup(mod, prog, real)
+local function modCacheLookup(mod, prog, real, typeDetectPass)
 	local p = mod.cache[prog]
 	if not p then return false end
 	local r = p[real]
 	if not r then return false end
-	return r
+	local t = r[typeDetectPass]
+	if not t then return false end
+	return t
 end
 
-local function modCachePut(mod, prog, real, value)
+local function modCachePut(mod, prog, real, typeDetectPass, value)
 	local p = mod.cache[prog]
 	if not p then
 		mod.cache[prog] = {}
 		p = mod.cache[prog]
 	end
-	p[real] = value
+	local r = p[real]
+	if not r then
+		p[real] = {}
+		r = p[real]
+	end
+	r[typeDetectPass] = value
 end
 
-local function modCacheLookupOrCreate(mod, prog, real)
-	local res = modCacheLookup(mod, prog, real)
+local function modCacheLookupOrCreate(mod, prog, real, typeDetectPass)
+	local res = modCacheLookup(mod, prog, real, typeDetectPass)
 	if not res then
 		res = mod.specializationFn()
-		modCachePut(mod, prog, real, res)
+		modCachePut(mod, prog, real, typeDetectPass, res)
 	end
 	return res
 end
@@ -124,22 +131,23 @@ local modulemt =
 		if not trace.compilation.isCompiling() then
 			error("Cannot call module.open() outside of a probabilistic program")
 		end
-		local currProg = trace.compilation.getCurrentlyCompilingProgram()
-		return modCacheLookupOrCreate(self, currProg, globals.real)
+		local currProg = trace.compilation.currentlyCompilingProgram()
+		local typeDetectPass = trace.compilation.isDoingTypeDetectionPass()
+		return modCacheLookupOrCreate(self, currProg, globals.real, typeDetectPass)
 	end,
 
 	-- openAs(program, [real])
-	-- Checks memo cache for program, real
+	-- Checks memo cache
 	-- If cache miss, invokes program:compile(real)
 	-- If still cache miss, then throw an error
-	openAs = function(self, prog, optreal)
-		local real = optreal or globals.real
-		local val = modCacheLookup(self, prog, real)
+	openAs = function(self, prog)
+		assertIsProgram(prog, "module.openAs")
+		local val = modCacheLookup(self, prog, globals.real, false)
 		if not val then
-			prog:compile(real)
-			val = modCacheLookup(self, prog, real)
+			prog:compile(globals.real)
+			val = modCacheLookup(self, prog, globals.real, false)
 			if not val then
-				error("module.openAs(program) -- module must be used in program.")
+				error("module:openAs(program) -- module must be used in program.")
 			end
 		end
 		return val

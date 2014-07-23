@@ -43,6 +43,9 @@ function compilation.beginRCTypeDetectionPass()
 	rcTypesUsed = {}
 	rcTypeDetectionPass = true
 end
+function compilation.isDoingTypeDetectionPass()
+	return rcTypeDetectionPass
+end
 function compilation.endRCTypeDetectionPass()
 	rcTypeDetectionPass = false
 end
@@ -531,7 +534,10 @@ local _RandExecTrace = S.memoize(function(program, real)
 					count = count + rdb:countChoices()
 				end
 			end)]
-			S.assert(count > 0)
+			if count == 0 then
+				S.printf("Execution of probabilistic program resulted in zero random choices\n")
+				S.assert(false)
+			end
 		end
 	end
 
