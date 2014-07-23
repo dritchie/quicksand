@@ -24,7 +24,7 @@ local prevReal = nil
 local rcTypeDetectionPass = false
 
 -- This is where we record the types of all random choices used.
-local rcTypesUsed = terralib.newlist()
+local rcTypesUsed = {}
 
 -- Signalling functions exposed to code in other files
 local compilation = {}
@@ -40,7 +40,7 @@ function compilation.beginCompilation(program, real)
 	globals.real = real
 end
 function compilation.beginRCTypeDetectionPass()
-	rcTypesUsed = terralib.newlist()
+	rcTypesUsed = {}
 	rcTypeDetectionPass = true
 end
 function compilation.endRCTypeDetectionPass()
@@ -122,6 +122,7 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 
 	terra RandomDBT:__init(addressStack: &Address)
 		self:initmembers()
+		S.assert(self.choicemap.__cells ~= nil)
 		self.addressStack = addressStack
 	end
 
@@ -361,12 +362,30 @@ local _RandExecTrace = S.memoize(function(program, real)
 	-- Add a RandomDB member for every type of random choice used
 	--   by the program.
 	local rcTypeIndices = terralib.newlist()
-	for i,rct in ipairs(rcTypesUsed) do
+	local i = 1
+	for rct,_ in pairs(rcTypesUsed) do
 		rcTypeIndices[rct] = i
 		RandExecTraceT.entries:insert({ field=string.format("rdb%d", i), type=RandomDB(rct) })
+		i = i + 1
 	end
+	assert(i > 1,
+		"A probabilistic program must make at least one random choice")
 	local function rdbForType(self, RCType)
 		return `self.[string.format("rdb%d", rcTypeIndices[RCType])]
+	end
+	local function emitForAllRCTypes(fn)
+		return quote
+			escape	
+				for rct,_ in pairs(rcTypesUsed) do
+					emit quote [fn(rct)] end
+				end
+			end
+		end
+	end
+	local function forAllRDBs(self, fn)
+		return emitForAllRCTypes(function(rct)
+			return fn(rdbForType(self, rct))
+		end)
 	end
 
 	-- Create the global pointer variable for this trace type
@@ -383,23 +402,19 @@ local _RandExecTrace = S.memoize(function(program, real)
 		self.addressStack:init()
 		self.canStructureChange = true
 
-		escape
-			for _,rct in ipairs(rcTypesUsed) do
-				emit quote
-					[rdbForType(self, rct)]:init(&self.addressStack)
-				end
+		[forAllRDBs(self, function(rdb)
+			return quote
+				rdb:init(&self.addressStack)
 			end
-		end
+		end)]
 
 		while not self.conditionsSatisfied do
 			-- Clear out all random dbs
-			escape
-				for _,rct in ipairs(rcTypesUsed) do
-					emit quote
-						[rdbForType(self, rct)]:clear()
-					end
+			[forAllRDBs(self, function(rdb)
+				return quote
+					rdb:clear()
 				end
-			end
+			end)]
 			-- Try running from scratch
 			self:update(true)
 		end
@@ -409,13 +424,11 @@ local _RandExecTrace = S.memoize(function(program, real)
 	--    * Need to make the 'addressStack' pointers in the rdbs correct
 	terra RandExecTraceT:__copy(other: &RandExecTraceT)
 		self:copymembers(other)
-		escape
-			for _,rct in ipairs(rcTypesUsed) do
-				emit quote
-					[rdbForType(self, rct)]:setAddressStack(&self.addressStack)
-				end
+		[forAllRDBs(self, function(rdb)
+			return quote
+				rdb:setAddressStack(&self.addressStack)
 			end
-		end
+		end)]
 	end
 
 	terra RandExecTraceT:setTemperature(temp: real)
@@ -482,13 +495,11 @@ local _RandExecTrace = S.memoize(function(program, real)
 		self.conditionsSatisfied = true
 
 		-- Prepare rdbs for trace update
-		escape
-			for _,rct in ipairs(rcTypesUsed) do
-				emit quote
-					[rdbForType(self, rct)]:prepareForTraceUpdate(canStructureChange)
-				end
+		[forAllRDBs(self, function(rdb)
+			return quote
+				rdb:prepareForTraceUpdate(canStructureChange)
 			end
-		end
+		end)]
 
 		-- Run computation
 		if self.hasReturnValue then S.rundestructor(self.returnValue) end
@@ -502,17 +513,26 @@ local _RandExecTrace = S.memoize(function(program, real)
 
 		-- If structural, clear out unreachable variables from rdbs
 		if canStructureChange then
-			escape
-				for _,rct in ipairs(rcTypesUsed) do
-					emit quote
-						self.oldlogprob = self.oldlogprob + [rdbForType(self, rct)]:clearUnreachables()
-					end
+			[forAllRDBs(self, function(rdb)
+				return quote
+					self.oldlogprob = self.oldlogprob + rdb:clearUnreachables()
 				end
-			end
+			end)]
 		end
 
 		-- Release ownership of global trace
 		gTrace = prevTrace
+
+		-- Every run of the program must make some number of random choices
+		if canStructureChange then
+			var count = 0
+			[forAllRDBs(self, function(rdb)
+				return quote
+					count = count + rdb:countChoices()
+				end
+			end)]
+			S.assert(count > 0)
+		end
 	end
 
 
@@ -522,13 +542,11 @@ local _RandExecTrace = S.memoize(function(program, real)
 	RandExecTraceT.countChoices = memoizeOnPredicate(function(predfn)
 		return terra(self: &RandExecTraceT)
 			var count: uint64 = 0
-			escape
-				for _,rct in ipairs(rcTypesUsed) do
-					if predfn(rct) then
-						emit quote count = count + [rdbForType(self, rct)]:countChoices() end
-					end
-				end
-			end
+			[emitForAllRCTypes(function(rct)
+				if predfn(rct) then
+					return quote count = count + [rdbForType(self, rct)]:countChoices() end
+				else return quote end end
+			end)]
 			return count
 		end
 	end)
@@ -548,24 +566,22 @@ local _RandExecTrace = S.memoize(function(program, real)
 			local argsyms = argtypes:map(function(t) return symbol(t) end)
 			local terra forwardmethod(self: &Proxy, [argsyms])
 				var base : uint64 = 0
-				escape
-					for _,rct in ipairs(rcTypesUsed) do
-						if predfn(rct) then
-							local method = rct:getmethod(methodname)
-							local i = symbol(uint64)
-							local c = symbol(uint64)
-							emit quote
-								var [i] = self.index - base
-								var [c] = [rdbForType(`self.owner, rct)]:countChoices()
-								if [i] < [c] then
-									var rc = [rdbForType(`self.owner, rct)]:getChoice([i])
-									return method(rc, [argsyms])
-								end
-								base = base + [c]
+				[emitForAllRCTypes(function(rct)
+					if predfn(rct) then
+						local method = rct:getmethod(methodname)
+						local i = symbol(uint64)
+						local c = symbol(uint64)
+						return quote
+							var [i] = self.index - base
+							var [c] = [rdbForType(`self.owner, rct)]:countChoices()
+							if [i] < [c] then
+								var rc = [rdbForType(`self.owner, rct)]:getChoice([i])
+								return method(rc, [argsyms])
 							end
+							base = base + [c]
 						end
-					end
-				end
+					else return quote end end
+				end)]
 			end
 			-- Attempt to compile the forwarding function.
 			local success, errmsg = pcall(forwardmethod.compile, forwardmethod)
@@ -634,6 +650,10 @@ local function isRecordingTrace()
 	return `[globalTrace()] ~= nil
 end
 
+local printType = macro(function(x)
+	print(x:gettype())
+	return quote end
+end)
 
 -- Look up random choice value in the currently-executing trace
 -- Non-POD values are returned by pointer
@@ -641,7 +661,7 @@ local function lookupRandomChoiceValue(RandomChoiceT, args, ctoropts, updateopts
 	-- If we're doing the random choice type detection compiler pass, then we
 	--    record the use of this type
 	if rcTypeDetectionPass then
-		rcTypesUsed:insert(RandomChoiceT)
+		rcTypesUsed[RandomChoiceT] = true
 	end
 	local ValType = RandomChoiceT.ValueType
 	return quote
@@ -663,7 +683,8 @@ local function lookupRandomChoiceValue(RandomChoiceT, args, ctoropts, updateopts
 						[globalTrace()].logprob = [globalTrace()].logprob + rc.logprob
 
 						-- Retrieve and copy the value of the random choice we found/created
-						S.copy(val, rc:getValue())
+						var x = rc:getValue()
+						S.copy(val, x)
 					else
 						-- If this is not part of a trace execution, just draw a forward sample
 						val = [RandomChoiceT.sampleFunction]([args])
@@ -731,17 +752,25 @@ local function _func(terrafn, ismethod)
 			argtypes[1] = `&argtypes[1]
 		end
 		local argstmp = argtypes:map(function(t) return symbol(t) end)
-		local RetType = getFuncReturnType(terrafn)
+		local RetType = getFuncReturnType(data.def)
 		return quote
 			var result : RetType
-			-- If we're not recording a trace then skip address tracking
-			if not [isRecordingTrace()] then
-				result = [data.def]([args])
-			else
-				var [argstmp] = [args]
-				[globalTrace()]:pushAddressStack()
-				result = [data.def]([argstmp])
-				[globalTrace()]:popAddressStack()
+			escape
+				if rcTypeDetectionPass then
+					emit quote result = [data.def]([args]) end
+				else
+					emit quote
+						-- If we're not recording a trace then skip address tracking
+						if not [isRecordingTrace()] then
+							result = [data.def]([args])
+						else
+							var [argstmp] = [args]
+							[globalTrace()]:pushAddressStack()
+							result = [data.def]([argstmp])
+							[globalTrace()]:popAddressStack()
+						end
+					end
+				end
 			end
 		in
 			result
@@ -782,27 +811,31 @@ end
 -- TODO: Provide 'isEvaluatingFactors' which can be toggled off to turn off evaluation of
 --    (expensive) factors when we're only running the trace to e.g. reconstruct a return value.
 local factor = macro(function(num)
-	return quote
-		if [isRecordingTrace()] then
-			[globalTrace()].logprob = [globalTrace()].logprob + num
+	if not rcTypeDetectionPass then
+		return quote
+			if [isRecordingTrace()] then
+				[globalTrace()].logprob = [globalTrace()].logprob + num
+			end
 		end
-	end
+	else return quote end end
 end)
 local function factorfunc(fn)
 	assert(terralib.isfunction(fn),
 		"Argument to qs.factorfunc must be a Terra function")
-	for _,def in fn:getdefinitions() do
+	for _,def in ipairs(fn:getdefinitions()) do
 		assert(def:gettype().returntype == globals.real,
 			"Definition of qs.factorfunc must return type 'real'")
 	end
 	fn = func(fn)
 	return macro(function(...)
 		local args = terralib.newlist({...})
-		return quote
-			if [isRecordingTrace()] then
-				[globalTrace()].logprob = [globalTrace()].logprob + fn([args])
+		if not rcTypeDetectionPass then
+			return quote
+				if [isRecordingTrace()] then
+					[globalTrace()].logprob = [globalTrace()].logprob + fn([args])
+				end
 			end
-		end
+		else return quote end end
 	end)
 end
 
@@ -810,29 +843,33 @@ end
 -- 'conditionfunc' is like 'factorfunc', but for hard constraints.
 --  TODO: Use 'isEvaluatingFactors' here, too?
 local condition = macro(function(pred)
-	return quote
-		if [isRecordingTrace()] then
-			[globalTrace()].conditionsSatisfied =
-				[globalTrace()].conditionsSatisfied and pred
+	if not rcTypeDetectionPass then
+		return quote
+			if [isRecordingTrace()] then
+				[globalTrace()].conditionsSatisfied =
+					[globalTrace()].conditionsSatisfied and pred
+			end
 		end
-	end
+	else return quote end end
 end)
 local function conditionfunc(fn)
 	assert(terralib.isfunction(fn),
 		"Argument to qs.conditionfunc must be a Terra function")
-	for _,def in fn:getdefinitions() do
+	for _,def in ipairs(fn:getdefinitions()) do
 		assert(def:gettype().returntype == bool,
 			"Definition of qs.conditionfunc must return type 'bool'")
 	end
 	fn = func(fn)
 	return macro(function(...)
 		local args = terralib.newlist({...})
-		return quote
-			if [isRecordingTrace()] then
-				[globalTrace()].conditionsSatisfied =
-					[globalTrace()].conditionsSatisfied and fn([args])
+		if not rcTypeDetectionPass then
+			return quote
+				if [isRecordingTrace()] then
+					[globalTrace()].conditionsSatisfied =
+						[globalTrace()].conditionsSatisfied and fn([args])
+				end
 			end
-		end
+		else return quote end end
 	end)
 end
 
@@ -849,11 +886,23 @@ local struct __Range
 __Range.metamethods.__for = function(syms,iter,body)
 	return syms, quote
 		var it = iter
-		if [isRecordingTrace()] then [globalTrace()]:pushAddressStack() end
+		escape
+			if not rcTypeDetectionPass then
+				emit quote
+					if [isRecordingTrace()] then [globalTrace()]:pushAddressStack() end
+				end
+			end
+		end
 		for [syms[1]] = it.min,it.max do
 			body
 		end
-		if [isRecordingTrace()] then [globalTrace()]:popAddressStack() end
+		escape
+			if not rcTypeDetectionPass then
+				emit quote
+					if [isRecordingTrace()] then [globalTrace()]:popAddressStack() end
+				end
+			end
+		end
 	end
 end
 local terra range(min: int64, max: int64)

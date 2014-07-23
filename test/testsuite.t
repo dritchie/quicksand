@@ -19,9 +19,9 @@ local assertEq = macro(function(name, testVal, trueVal)
 	assert(testVal:gettype() == trueVal:gettype())
 	local failureFormatStr
 	if testVal:gettype():isintegral() then
-		failureFormatStr = "failed! Value was %d, should have been %d\n"
+		failureFormatStr = "FAILED! Value was %d, should have been %d\n"
 	elseif testVal:gettype():isfloat() then
-		failureFormatStr = "failed! Value was %g, should have been %g\n"
+		failureFormatStr = "FAILED! Value was %g, should have been %g\n"
 	else
 		error("assertEq: Unsupported type " .. tostring(testVal:gettype()))
 	end
@@ -49,14 +49,14 @@ local function compileAndRunTest(name, fn)
 	testsRun:set(testsRun:get() + 1)
 	local success, ret = pcall(fn)
 	if not success then
-		print("failed! Error message:")
+		print("FAILED! Error message:")
 		print("----------------------------------")
 		print(ret)
 		print("----------------------------------")
 	else
 		print("passed.")
 		testsPassed:set(testsPassed:get() + 1)
-		if ret.destruct then
+		if type(ret) == "cdata" and ret.destruct then
 			ret:destruct()
 		end
 	end
@@ -73,8 +73,8 @@ local function failToCompileTest(name, fn)
 		print("passed.")
 		testsPassed:set(testsPassed:get() + 1)
 	else
-		print("failed! Program compiled when it should have failed.")
-		if ret.destruct then
+		print("FAILED! Program compiled when it should have failed.")
+		if type(ret) == "cdata" and ret.destruct then
 			ret:destruct()
 		end
 	end
@@ -119,7 +119,7 @@ local function expectedValueTest(name, prog, trueExp, method, optparams)
 	testmean = testmean / #estimates
 	meanerr = meanerr / #estimates
 	if meanerr > errtol then
-		print(string.format("failed! Expected value was %g, should have been %g", testmean, trueExp))
+		print(string.format("FAILED! Expected value was %g, should have been %g", testmean, trueExp))
 	else
 		print("passed.")
 		testsPassed:set(testsPassed:get() + 1)
@@ -203,11 +203,299 @@ multiMethodExpectedValueTest(
 qs.program(function()
 	return terra()
 		var items = array(0.2, 0.3, 0.4)
-		var params = [S.Vector(double)].salloc():init()
+		var params = [S.Vector(qs.primfloat)].salloc():init()
 		params:insert(0.2); params:insert(0.6); params:insert(0.2)
 		return items[qs.multinomial(params, {struc=false})]
 	end
 end), 0.2*.2 + 0.6*.3 + 0.2*.4)
+
+multiMethodExpectedValueTest(
+"gaussian expectation",
+qs.program(function()
+	return terra()
+		return qs.gaussian(0.1, 0.5, {struc=false})
+	end
+end), 0.1)
+
+multiMethodExpectedValueTest(
+"gamma expectation",
+qs.program(function()
+	return terra()
+		return qs.gamma(2.0, 2.0, {struc=false})/10.0
+	end
+end), 0.4)
+
+multiMethodExpectedValueTest(
+"beta expectation",
+qs.program(function()
+	return terra()
+		return qs.beta(2.0, 5.0, {struc=false})
+	end
+end), 2.0/(2+5))
+
+multiMethodExpectedValueTest(
+"binomial expectation",
+qs.program(function()
+	return terra()
+		return qs.binomial(0.5, 40, {struc=false})/40.0
+	end
+end), 0.5)
+
+multiMethodExpectedValueTest(
+"poisson expectation",
+qs.program(function()
+	return terra()
+		return qs.poisson(4.0, {struc=false})/10.0
+	end
+end), 0.4)
+
+local dirichletArrayProg = qs.program(function()
+	return terra()
+		return qs.dirichlet(array(1.0, 1.0, 1.0, 1.0), {struc=false})
+	end
+end)
+compileAndRunTest(
+"dirichlet array compile and run (forward)",
+function() return qs.infer(dirichletArrayProg, qs.Samples, qs.ForwardSample(_numsamps))() end)
+compileAndRunTest(
+"dirichlet array compile and run (reject)",
+function() return qs.infer(dirichletArrayProg, qs.Samples, qs.WeightedRejectionSample(_numsamps))() end)
+compileAndRunTest(
+"dirichlet array compile and run (mcmc)",
+function() return qs.infer(dirichletArrayProg, qs.Samples, qs.MCMC(qs.TraceMHKernel(), {numsamps=_numsamps}))() end)
+
+local dirichletVectorProg = qs.program(function()
+	return terra()
+		var p = [S.Vector(qs.primfloat)].salloc():init()
+		p:insert(1.0); p:insert(1.0); p:insert(1.0); p:insert(1.0)
+		var d : S.Vector(qs.primfloat)
+		d:copy(qs.dirichlet(p, {struc=false}))
+		return d
+	end
+end)
+compileAndRunTest(
+"dirichlet vector compile and run (forward)",
+function() return qs.infer(dirichletVectorProg, qs.Samples, qs.ForwardSample(_numsamps))() end)
+compileAndRunTest(
+"dirichlet vector compile and run (reject)",
+function() return qs.infer(dirichletVectorProg, qs.Samples, qs.WeightedRejectionSample(_numsamps))() end)
+compileAndRunTest(
+"dirichlet vector compile and run (mcmc)",
+function() return qs.infer(dirichletVectorProg, qs.Samples, qs.MCMC(qs.TraceMHKernel(), {numsamps=_numsamps}))() end)
+
+compileAndRunTest(
+"MAP compile and run",
+function()
+	return qs.infer(qs.program(function()
+		return terra()
+			return qs.gaussian(0.0, 1.0, {struc=false})
+		end
+	end),
+	qs.MAP, qs.WeightedRejectionSample(_numsamps))()
+end)
+
+compileAndRunTest(
+"autocorrelation compile and run",
+function()
+return qs.infer(qs.program(function()
+		return terra()
+			return qs.gaussian(0.0, 1.0, {struc=false})
+		end
+	end),
+	qs.Autocorrelation(), qs.WeightedRejectionSample(_numsamps))()
+end)
+
+compileAndRunTest(
+"histogram compile and run",
+function()
+return qs.infer(qs.program(function()
+		return terra()
+			return qs.multinomial(array(0.6, 0.3, 0.1), {struc=false})
+		end
+	end),
+	qs.Histogram, qs.WeightedRejectionSample(_numsamps))()
+end)
+
+expectedValueTest(
+"initial value expectation",
+qs.program(function()
+	return terra()
+		return qs.gaussian(0.1, 0.5, {struc=false, init=0.2})
+	end
+end), 0.1, qs.MCMC)
+
+failToCompileTest(
+"non-constant struc tag error",
+function()
+return qs.infer(qs.program(function()
+		return terra()
+			var s = false
+			return qs.gaussian(0.0, 1.0, {struc=s})
+		end
+	end),
+	qs.Expectation(), qs.WeightedRejectionSample(_numsamps))()
+end)
+
+expectedValueTest(
+"condition expectation",
+qs.program(function()
+	return terra()
+		var a = qs.flip(0.5, {struc=false})
+		qs.condition(a)
+		return a
+	end
+end), 1.0, qs.MCMC)
+
+expectedValueTest(
+"conditionfunc expectation",
+qs.program(function()
+	local cf = qs.conditionfunc(terra(x: int)
+		return x == 2
+	end)
+	return terra()
+		var x = qs.multinomial(array(0.6, 0.3, 0.1), {struc=false})
+		cf(x)
+		return x
+	end
+end), 2.0, qs.MCMC)
+
+expectedValueTest(
+"factor expectation",
+qs.program(function()
+	return terra()
+		var x = qs.uniform(-1.0, 1.0, {struc=false, init=0.0})
+		qs.factor([D.gaussian(qs.real)].logprob(x, 0.3, 0.1))
+		return x
+	end
+end), 0.3, qs.MCMC)
+
+expectedValueTest(
+"factorfunc expectation",
+qs.program(function()
+	local ff = qs.factorfunc(terra(x: qs.real)
+		return [D.gaussian(qs.real)].logprob(x, 0.3, 0.1)
+	end)
+	return terra()
+		var x = qs.uniform(-1.0, 1.0, {struc=false, init=0.0})
+		ff(x)
+		return x
+	end
+end), 0.3, qs.MCMC)
+
+expectedValueTest(
+"observe expectation",
+qs.program(function()
+	return terra()
+		var x = qs.uniform(-1.0, 1.0, {struc=false, init=0.0})
+		qs.gaussian.observe(x, 0.3, 0.1)
+		return x
+	end
+end), 0.3, qs.MCMC)
+
+expectedValueTest(
+"multiple choices expectation",
+qs.program(function()
+	return terra()
+		var a = qs.flip(0.5, {struc=false})
+		var b = qs.flip(0.5, {struc=false})
+		qs.condition(a or b)
+		return (a and b)
+	end
+end), 1.0/3.0, qs.MCMC)
+
+expectedValueTest(
+"basic control flow expectation",
+qs.program(function()
+	return terra()
+		if qs.flip(0.7) then
+			return qs.flip(0.2, {struc=false})
+		else
+			return qs.flip(0.8, {struc=false})
+		end
+	end
+end), 0.7*0.2 + 0.3*0.8, qs.MCMC)
+
+expectedValueTest(
+"hierarchical flip expectation",
+qs.program(function()
+	return terra()
+		var weight = 0.8
+		if qs.flip(0.7) then weight = 0.2 end
+		return qs.flip(weight, {struc=false})
+	end
+end), 0.7*0.2 + 0.3*0.8, qs.MCMC)
+
+expectedValueTest(
+"qs.func expectation",
+qs.program(function()
+	local helper = qs.func(terra()
+		return qs.gaussian(0.1, 0.5, {struc=false})
+	end)
+	return terra()
+		return helper()
+	end
+end), 0.1, qs.MCMC)
+
+
+expectedValueTest(
+"recursive qs.func expectation",
+qs.program(function()
+	local powerLaw = qs.func()
+	powerLaw:define(terra(prob: qs.real, x: int) : int
+		if qs.flip(prob) then
+			return x
+		else
+			return powerLaw(prob, x+1)
+		end
+	end)
+	return terra()
+		var a = powerLaw(0.3, 1)
+		return a < 5
+	end
+end), 0.7599, qs.MCMC)
+
+expectedValueTest(
+"transdimensional expectation",
+qs.program(function()
+	return terra()
+		var a = 0.7
+		if qs.flip(0.9) then
+			a = qs.beta(1.0, 5.0, {struc=false})
+		end
+		var b = qs.flip(a, {struc=false})
+		qs.condition(b)
+		return a
+	end
+end), 0.417, qs.MCMC)
+
+expectedValueTest(
+"for loop expectation",
+qs.program(function()
+	return terra()
+		var accum = 0
+		for i=0,4 do
+			accum = accum + int(qs.flip(0.5, {struc=false}))
+		end
+		return accum / 4.0
+	end
+end), 0.5, qs.MCMC)
+
+expectedValueTest(
+"range-based for loop expectation",
+qs.program(function()
+	return terra()
+		var accum = 0
+		for i in qs.range(0,4) do
+			accum = accum + int(qs.flip(0.5, {struc=false}))
+		end
+		return accum / 4.0
+	end
+end), 0.5, qs.MCMC)
+
+
+
+
+-- TODO: qs.module
 
 
 

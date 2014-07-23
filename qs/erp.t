@@ -366,15 +366,15 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 		terra RandomChoiceT:proposal() : {real, real}
 			var fwdlp : real
 			var rvslp : real
-			S.rundestructor(self.value)
-			var val = self:getValue()
+			var currval = self:getValue()
 			self.value, fwdlp, rvslp = propose(escape
 				if propose:gettype().parameters[1] == &ValueType then
-					emit `&val
+					emit `&currval
 				else
-					emit `val
+					emit `currval
 				end
 			end, [paramArgList(self)])
+			S.rundestructor(currval)
 			self.value = [inv(`self.value, self)]
 			self:rescore()
 			return fwdlp, rvslp
