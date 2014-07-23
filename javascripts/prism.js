@@ -16,3 +16,7 @@ Prism.languages.terra = {
 	'boolean': /\b(true|false)\b/g,
 	'number': /\b-?(0x[\da-fA-F]|\d+\.?|\d*\.\d+f?)\b/g
 };;
+Prism.languages.quicksand = Prism.languages.extend("terra",
+{
+	'keyword': /\b(qs.program)\b/g
+});

@@ -5,4 +5,8 @@ title: Quicksand
 
 # Test Heading
 
-    terra foo() return 42 end
+    local p = qs.program(function()
+        return terra()
+            --
+        end
+    end)
