@@ -110,9 +110,14 @@ Random choices are what make probabilistic programs probabilistic. A program mak
 
 Quicksand has a number of built-in random choice functions:
 
-- `qs.flip(p)`: Flips a coin with weight `p` (i.e. a Bernoulli distribuion).
-- `qs.uniform(lo, hi)`: A number uniformly distributed between `lo` and `hi`.
-- `qs.gaussian(m, sd)`: A number normally distributed with mean `m` and standard deviation `sd`.
+`qs.flip(p)`
+Flips a coin with weight `p` (i.e. a Bernoulli distribuion).
+
+`qs.uniform(lo, hi)`
+A number uniformly distributed between `lo` and `hi`.
+
+`qs.gaussian(m, sd)`
+A number normally distributed with mean `m` and standard deviation `sd`.
 
 
 ## Likelihoods and Conditioning
