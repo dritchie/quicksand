@@ -84,7 +84,8 @@ pre[class*="language-"] {
 
 /* dritchie: for quicksand keywords */
 .token.qskeyword {
-	color: #a87fff;
+	/*color: #a87fff;*/
+	color: #8a68d1;
 }
 
 .token.regex,
