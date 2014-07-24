@@ -177,11 +177,43 @@ This adjusts the probability of the current program execution according to the p
 
 ### qs.condition
 
+Imposes a hard constraint on a program's execution:
+
+	var x = qs.beta(2.0, 2.0)
+	qs.condition(x > 0.5)
+
+This will cause all program executions with `x <= 0.5` to be rejected. Imposing many or difficult-to-satisfy constraints in this way can cause inference to become inefficient, however.
+
 ### qs.conditionfunc
+
+Automatically applies the return value of a function as a condition:
+
+	local p = qs.program(function()
+		local cf = qs.conditionfunc(terra(x: qs.real)
+			return x > 0.5
+		end)
+		return terra()
+			var x = qs.beta(2.0, 2.0)
+			cf(x)
+		end
+	end)
+
+While overkill for the example above, this can be useful for encapsulating conditions that require extensive computation to compute. Additionally, some inference methods can sometimes skip executing these functions when it is not necessary for their operation, which can be a computation savings.
 
 ### qs.factor
 
+Directly adds to the log probability of the current program execution:
+
+	var x = qs.flip(0.5)
+	var y = qs.flip(0.5)
+	if x == y then qs.factor(100.0) end
+	if x ~= y then qs.factor(-100.0) end
+
+Useful for implementing undirected models such as Ising models and Markov Random Fields.
+
 ### qs.factorfunc
+
+Is to `qs.factor` what `qs.conditionfunc` is to `qs.condition`. The same addendum about potential computation savings also applies here.
 
 
 # Function and Loops
