@@ -143,7 +143,21 @@ Draw from a multinomial distribution. `params` may be either an array or a vecto
 `qs.dirichlet(params)`  
 Draw from a dirichlet distribution. `params` may be either an array or a vector of real numbers.
 
-### Optional Parameters
+### Options
+
+In addition to their native parameters, every random choice can also take a set of options, specified as a struct literal:
+
+	qs.gaussian(0.0, 1.0, {init=0.0, struc=false})
+
+`init`  
+Specifies the initial value of the random choice for MCMC inference.
+
+`struc`  
+Declares whether this random choice can affect the *structure* of the program execution trace--more specifically, whether the value of this random choice can determine the existence of other random choices. This must be a boolean compile-time constant (`true`, `false`, or a Lua boolean variable), and it defaults to `true` for all choices unless otherwise specified. Some inference methods depend on being able to separate structural vs. non-structural random choices. In principle, whether a choice is structural can be determined automatically through program analysis. To keep the system as simple as possible, though, Quicksand requires manual specification. It is usually not difficult to identify when a choice is non-structural (most random choices are, except for some latent variables in hierarchical or recursive models).
+
+### Creating New Random Choice Functions
+
+You can define your own primitive random choice functions using `makeRandomChoice` in `qs/erp.t`. See `qs/erpdefs.t` for usage examples. The interface to random choice creation is subject to change, so it is not documented in any further detail here.
 
 
 ## Likelihoods and Conditioning
