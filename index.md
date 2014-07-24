@@ -106,13 +106,34 @@ In the rest of this document, we'll describe the components that go into buildin
 
 ### qs.conditionfunc
 
+### qs.factor
+
+### qs.factorfunc
+
+### [randomChoice].observe
 
 
 ## Function and Loops
 
+### qs.func
+
+### qs.method
+
+### qs.range
+
 
 ## Programs and Modules
 
+### qs.program
+
+### qs.module
+
 
 ## Inference
+
+### Methods
+
+#### qs.MCMC
+
+##### qs.TraceMHKernel
 
