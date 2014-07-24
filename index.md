@@ -99,8 +99,17 @@ In the rest of this document, we'll describe the components that go into buildin
 
 ## Real Numbers
 
+Within a probabilistic program, any real (i.e. floating point) number used should have the type `qs.real`. This defaults to double, but can be changed by modifying the value of `qs.primfloat` in `qs/globals.t`. Inference methods can also change the value of `qs.real` (e.g. Hamiltonian Monte Carlo).
+
 
 ## Random Choices
+
+Random choices are what make probabilistic programs probabilistic. A program makes some number of random choices during its execution, and inference methods then manipulate the values of those random choices to explore the space of possible program executions.
+
+### Primitive Random Choice Functions
+
+Quicksand has a number of built-in random choice functions:
+- `qs.flip(p)`: blah blah blah
 
 
 ## Likelihoods and Conditioning
