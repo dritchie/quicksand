@@ -7,6 +7,8 @@ title: Quicksand
 
 Quicksand is a library for [probabilistic programming](http://web.stanford.edu/~ngoodman/papers/POPL2013-abstract.pdf) in the Terra programming language. Since Terra is a low-level language, Quicksand programs are written a level of abstraction comparable to that of C. Users can write these programs directly, or potentially use Quicksand as a compiler target for higher-level/domain-specific languages.
 
+* auto-gen TOC:
+{:toc}
 
 ## Installation
 
@@ -162,7 +164,11 @@ You can define your own primitive random choice functions using `makeRandomChoic
 
 ## Likelihoods and Conditioning
 
+A probabilistic program is only interesting if we introduce some condition or constraint its execution--otherwise, we could just run it forward to obtain samples from the distribution it defines.
+
 ### [randomChoice].observe(value, ...)
+
+Adjusts the probability of the current program execution according to the probability of observing `value` drawn from `[randomChoice]` with parameters `...`. The simple example programs above demonstrated
 
 ### qs.condition(bool)
 
