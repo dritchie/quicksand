@@ -3,14 +3,15 @@ layout: post
 title: Quicksand
 ---
 
-# Getting Started with Quicksand
+<h1>Getting Started with Quicksand</h1>
 
 Quicksand is a library for [probabilistic programming](http://web.stanford.edu/~ngoodman/papers/POPL2013-abstract.pdf) in the Terra programming language. Since Terra is a low-level language, Quicksand programs are written a level of abstraction comparable to that of C. Users can write these programs directly, or potentially use Quicksand as a compiler target for higher-level/domain-specific languages.
 
+<h1>Table of Contents</h1>
 * auto-gen TOC:
 {:toc}
 
-## Installation
+# Installation
 
 You'll first need to download and build [Terra](http://terralang.org).
 
@@ -22,7 +23,7 @@ Then just add the following to your `.profile`, `.bashrc`, or equivalent file:
 Quicksand has been tested on OSX and should also work on Linux. On Windows, your mileage may vary.
 
 
-## Simple Quicksand Programs
+# Simple Quicksand Programs
 
 Let's take a look at a simple Quicksand program--a probabilistic "Hello, World," if you will:
 
@@ -99,16 +100,16 @@ Probabilistic programs can naturally represent distributions with a variable num
 In the rest of this document, we'll describe the components that go into building these programs, as well as the procedures available for performing inference on them.
 
 
-## Real Numbers
+# Real Numbers
 
 Within a probabilistic program, any real (i.e. floating point) number used should have the type `qs.real`. This defaults to `double`, but can be changed by modifying the value of `qs.primfloat` in `qs/globals.t`. Inference methods can also change the value of `qs.real` (e.g. Hamiltonian Monte Carlo).
 
 
-## Random Choices
+# Random Choices
 
 Random choices are what make probabilistic programs probabilistic. A program makes some number of random choices during its execution, and inference methods then manipulate the values of those random choices to explore the space of possible program executions.
 
-### Primitive Random Choice Functions
+## Primitive Random Choice Functions
 
 Quicksand has a number of built-in random choice functions:
 
@@ -145,7 +146,7 @@ Draw from a multinomial distribution. `params` may be either an array or a vecto
 `qs.dirichlet(params)`  
 Draw from a dirichlet distribution. `params` may be either an array or a vector of real numbers.
 
-### Options
+## Options
 
 In addition to their native parameters, every random choice can also take a set of options, specified as a struct literal:
 
@@ -157,12 +158,12 @@ Specifies the initial value of the random choice for MCMC inference.
 `struc`  
 Declares whether this random choice can affect the *structure* of the program execution trace--more specifically, whether the value of this random choice can determine the existence of other random choices. This must be a boolean compile-time constant (`true`, `false`, or a Lua boolean variable), and it defaults to `true` for all choices unless otherwise specified. Some inference methods depend on being able to separate structural vs. non-structural random choices. In principle, whether a choice is structural can be determined automatically through program analysis. To keep the system as simple as possible, though, Quicksand requires manual specification. It is usually not difficult to identify when a choice is non-structural (most random choices are, except for some latent variables in hierarchical or recursive models).
 
-### Creating New Random Choice Functions
+## Creating New Random Choice Functions
 
 You can define your own primitive random choice functions using `makeRandomChoice` in `qs/erp.t`. See `qs/erpdefs.t` for usage examples. The interface to random choice creation is subject to change, so it is not documented in any further detail here.
 
 
-## Likelihoods and Conditioning
+# Likelihoods and Conditioning
 
 A probabilistic program is only interesting if we introduce some condition or constraint its execution--otherwise, we could just run it forward to obtain samples from the distribution it defines.
 
@@ -179,7 +180,7 @@ Adjusts the probability of the current program execution according to the probab
 ### qs.factorfunc(terrafn)
 
 
-## Function and Loops
+# Function and Loops
 
 ### qs.func(terrafn)
 
@@ -195,7 +196,7 @@ Adjusts the probability of the current program execution according to the probab
 ### qs.module(luafn)
 
 
-## Inference
+# Inference
 
 ### qs.infer(prog, query, method)
 
