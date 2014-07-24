@@ -26,7 +26,7 @@ Let's take a look at a simple Quicksand program--a probabilistic "Hello, World,"
 
 	local qs = terralib.require("qs")
 
-	local p = qs.program(function()
+	local p1 = qs.program(function()
 		return terra()
 			var a = qs.flip(0.5)
 			var b = qs.flip(0.5)
@@ -35,4 +35,30 @@ Let's take a look at a simple Quicksand program--a probabilistic "Hello, World,"
 		end
 	end)
 
-The probabilistic program `p` draws two random values via unbiased coin flips (the 0.5 means "50% chance of coming up true") and returns the logical AND of those two values, subject to the constraint that at least one of them is true. 
+The probabilistic program `p1` draws two random values via unbiased coin flips (the 0.5 means "50% chance of coming up true") and returns the logical AND of those two values, subject to the constraint that at least one of them is true. 
+
+Here's a slightly more complex (and useful) example: estimating parameters of a Gaussian mixture model from data:
+
+	local qs = terralib.require("qs")
+	local S = terralib.require("qs.lib.std")
+
+	local p2 = qs.program(function()
+		
+		local data = global(S.Vector(qs.real))
+
+		-- Initialize data vector...
+
+		return terra()
+			var mixparams = qs.dirichlet(array(1.0, 1.0, 1.0))
+			var means = array(qs.gaussian(0.0, 1.0),
+							  qs.gaussian(0.0, 1.0),
+							  qs.gaussian(0.0, 1.0))
+			for d in data do
+				var which = qs.multinomial(mixparams)
+				qs.gaussian.observe(d, means[which], 1.0)
+			end
+		end
+
+	end)
+
+Here, the program `p2` draws mixture paramters and mixture component means from Dirichlet and Gaussian priors, respectively. For each data point, it then selects which mixture component the data point was drawn from (a latent variable), and then accounts for the probability of drawing that data point from that mixture component (here, all components have a constant standard deviation of 1).
