@@ -413,8 +413,9 @@ Draw samples by Markov Chain Monte Carlo. This is the go-to method for inference
 	end)
 
 	-- qs.MCMC(kernel, params)
-	local samples = qs.infer(p, qs.Samples, qs.MCMC(qs.TraceMHKernel(),
-													{numsamps=1000, lag=1, verbose=true}))
+	local samples = qs.infer(p, qs.Samples,
+							 qs.MCMC(qs.TraceMHKernel(),
+							 		 {numsamps=1000, lag=1, verbose=true}))
 
 `numsamps`  
 How many samples to draw. Defaults to 1000.
@@ -431,10 +432,10 @@ The actual legwork of MCMC is done by *transition kernels*, which describe how t
 The workhorse of probabilistic programming inference. This kernel implements the MCMC trace sampler described in Algorithm 2 of [this paper](http://www.mit.edu/~ast/papers/lightweight-mcmc-aistats2011.pdf). It will work on any probabilistic program, though it is not necessarily the most efficient kernel. This is often a good kernel to start with. The optional parameters `doStruct` and `doNonstruct` specify whether the kernel should operate on structural or non-structural random choices. They both default to `true` (i.e. operating on all random choices)
 
 `qs.LARJKernel(annealKernel, {intervals=int, stepsPerInterval=int})`  
-**Coming soon...**
+*Coming soon...*
 
 `qs.HMCKernel({stepSize=real, numSteps=int, doStepSizeAdapt=bool})`  
-**Coming soon...**
+*Coming soon...*
 
 
 
