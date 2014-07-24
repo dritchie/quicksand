@@ -111,7 +111,7 @@ Random choices are what make probabilistic programs probabilistic. A program mak
 Quicksand has a number of built-in random choice functions:
 
 `qs.flip(p)`  
-Flips a coin with weight `p` (i.e. a Bernoulli distribuion).
+Flip a coin with weight `p` (i.e. a Bernoulli distribuion).
 
 `qs.uniform(lo, hi)`  
 A number uniformly distributed between `lo` and `hi`.
@@ -119,8 +119,36 @@ A number uniformly distributed between `lo` and `hi`.
 `qs.gaussian(m, sd)`  
 A number normally distributed with mean `m` and standard deviation `sd`.
 
+`qs.gamma(k, theta)`  
+Draw from a gamma distribution with shape parameter `k` and scale parameter `theta`.
+
+`qs.gammamv(m, v)`  
+Draw from a gamma distribution with mean `m` and variance `v`. This is just syntax sugar on top of `qs.gammma`.
+
+`qs.beta(a, b)`  
+Draw from a beta distribution with shape parameters `a` and `b`.
+
+`qs.betamv(m, v)`  
+Draw from a beta distribution with mean `m` and variance `v`. This is just syntax sugar on top of `qs.beta`.
+
+`qs.binomial(p, n)`  
+Draw from a binomial distribution with probability `p` and number of trials `n`.
+
+`qs.poisson(lambda)`  
+Draw from a poisson distribution with average rate `lambda`.
+
+`qs.multinomial(params)`  
+Draw from a multinomial distribution. `params` may be either an array or a vector of real numbers.
+
+`qs.dirichlet(params)`  
+Draw from a dirichlet distribution. `params` may be either an array or a vector of real numbers.
+
+### Optional Parameters
+
 
 ## Likelihoods and Conditioning
+
+### [randomChoice].observe(value, ...)
 
 ### qs.condition(bool)
 
@@ -129,8 +157,6 @@ A number normally distributed with mean `m` and standard deviation `sd`.
 ### qs.factor(real)
 
 ### qs.factorfunc(terrafn)
-
-### [randomChoice].observe(value, ...)
 
 
 ## Function and Loops
