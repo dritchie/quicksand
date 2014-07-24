@@ -5,7 +5,7 @@ title: Quicksand
 
 # Getting Started with Quicksand
 
-Quicksand is a library for [probabilistic programming](http://web.stanford.edu/~ngoodman/papers/POPL2013-abstract.pdf) in the Terra programming language.
+Quicksand is a library for [probabilistic programming](http://web.stanford.edu/~ngoodman/papers/POPL2013-abstract.pdf) in the Terra programming language. Since Terra is a low-level language, Quicksand programs are written a level of abstraction comparable to that of C. Users can write these programs directly, or potentially use Quicksand as a compiler target for higher-level/domain-specific languages.
 
 
 ## Installation
@@ -57,8 +57,44 @@ Here's a slightly more complex (and useful) example: estimating parameters of a 
 				var which = qs.multinomial(mixparams)
 				qs.gaussian.observe(d, means[which], 1.0)
 			end
+			return mixparams, means
 		end
 
 	end)
 
-Here, the program `p2` draws mixture paramters and mixture component means from Dirichlet and Gaussian priors, respectively. For each data point, it then selects which mixture component the data point was drawn from (a latent variable), and then accounts for the probability of drawing that data point from that mixture component (here, all components have a constant standard deviation of 1).
+Here, the program `p2` draws mixture parameters and mixture component means from Dirichlet and Gaussian priors, respectively. For each data point, it then selects which mixture component the data point was drawn from (a latent variable), and then accounts for the probability of drawing that data point from that mixture component (here, all components have a constant standard deviation of 1).
+
+Probabilistic programs can naturally represent distributions with a variable number of random variables. Here, we'll show how to use this ability to perform model selection by inferring the number of components in our mixture model:
+
+	local qs = terralib.require("qs")
+	local S = terralib.require("qs.lib.std")
+
+	local p3 = qs.program(function()
+		
+		local data = global(S.Vector(qs.real))
+
+		-- Initialize data vector...
+
+		return terra()
+			var nums = array(2, 3, 4, 5)
+			var n = nums[qs.multinomial(0.25, 0.25, 0.25, 0.25)]
+			var mixprior  = [S.Vector(qs.real)].salloc():init()
+			var means = [S.Vector(qs.real)].salloc():init()
+			for i=0,n do
+				mixprior:insert(1.0)
+				means:insert(qs.gaussian(0.0, 1.0))
+			end
+			var mixparams = qs.dirichlet(mixprior)
+			for d in data do
+				var which = qs.multinomial(mixparams)
+				qs.gaussian.observe(d, means[which], 1.0)
+			end
+			return n
+		end
+
+	end)
+
+In the rest of this document, we'll describe the components that go into building these programs, as well as the procedures available for performing inference on them.
+
+
+
