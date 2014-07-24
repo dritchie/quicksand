@@ -265,11 +265,98 @@ Provides an iterable range of integers:
 
 Other looping constructs, such as native for loops, while loops, or other iterator-based loops, are also perfectly fine to use with Quicksand. However, `qs.range` tracks information about loop nesting, so using it allows more efficient inference in e.g. programs that use nested loops where the number of loop iterations are derived from random choices.
 
+
 # Programs and Modules
+
+Quicksand has constructs for separating probabilistic code (i.e. code that makes random choices) from vanilla Terra code.
 
 ### qs.program
 
+Defines a probabilistic program. This is the object that inference methods operate on. It takes one argument, a Lua function, and that Lua function should return a no-argument Terra function--the 'main' function of the program, essentially:
+
+	local p = qs.program(function()
+
+		-- Define helper functions, types, etc.
+
+		return terra()
+
+			-- Make random choices, invoke other functions, etc.
+
+			return [something]
+
+		end
+	end)
+
+Any code that makes random choices (functions, struct methods) **must** be defined inside of a `qs.program`. Code within a probabilistic program goes through a special compilation process. Attempting to define probabilistic code outside of probabilistic program results in undefined behavior (most likely manifesting as inscrutable error messages).
+
 ### qs.module
+
+For large projects, it can be useful to develop probabilistic programs modularly, instead of putting all of your code in one giant, monolithic `qs.program`. `qs.module` allows you to do this:
+
+	local mod = qs.module(function() 
+		return
+		{
+			dirichletMultinomial3 = qs.func(terra()
+				return qs.multinomial(qs.dirichlet(array(1.0, 1.0, 1.0)))
+			end)
+		}
+	end)
+
+The argument to `qs.module` is a Lua function that can return anything (but typically a Lua table of functions and types). To use this module in a probabilistic program, it has to be "opened" with the `:open` method:
+
+	local p = qs.program(function()
+		local m = mod:open()
+		return terra()
+			var items = array(10, 22, 30)
+			var choices : int[10]
+			for i=0,10 do
+				choices[i] = m.dirichletMultinomial3()
+			end
+			qs.condition(choices[0] == 22)
+			return choices 
+		end
+	end)
+
+Additionally, you might have some code defined inside a probabilistic program that you'd also like to use outside of it. For instance, the return value of your program is a struct with some probabilistic methods, and you'd like to process the results that inference gives you. `qs.module` facilitates this use case, too, with the `:openAs` method:
+
+	local mod = qs.module(function()
+
+		local struct Vec { data: qs.real[2] }
+
+		Vec.methods.sampleRand = qs.method(terra(self: &Vec)
+			self.data[0] = qs.gaussian(0.0, 1.0, {struc=false})
+			self.data[1] = qs.gaussian(0.0, 1.0, {struc=false})
+		end)
+
+		terra Vec:normSq()
+			return self.data[0]*self.data[0] +
+				   self.data[1]*self.data[1]
+		end 
+
+		return { Vec = Vec }
+	end)
+
+	local p = qs.program(function()
+		local m = mod:open()
+		return terra()
+			var vecs : m.Vec[10]
+			for i=0,10 do
+				vecs[i]:sampleRand()
+				qs.condition(vecs[i]:normSq() > 0.5)
+			end
+			return vecs
+		end
+	end)
+
+	-- Function for processing the return value
+	local m = mod:openAs(p)
+	local terra totalNorm(vecs: m.Vec[10])
+		var sum = vecs[0]:normSq()
+		for i=1,10 do sum = sum + vecs[i]:normSq() end
+		return sum
+	end
+
+`:openAs` is necessary because probabilistic code compiles differently depending on the program that is using it. In fact, it is an error to use `:open` outside of a `qs.program`.
 
 
 # Inference
