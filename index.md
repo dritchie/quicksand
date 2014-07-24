@@ -263,7 +263,7 @@ Provides an iterable range of integers:
 		sum = sum + int(qs.flip(0.5))
 	end
 
-Other looping constructs, such as native for loops, while loops, or other iterator-based loops, are also perfectly fine to use with Quicksand. However, `qs.range` tracks information about loop nesting, so using it allows more efficient inference in e.g. programs that use nested loops where the number of loop iterations are derived from random choices.
+Other looping constructs, such as native for loops, while loops, or other iterator-based loops are also perfectly fine to use with Quicksand. However, `qs.range` tracks information about loop nesting, so using it allows more efficient inference in e.g. programs that use nested loops where the number of loop iterations are derived from random choices.
 
 
 # Programs and Modules
