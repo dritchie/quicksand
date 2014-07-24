@@ -165,60 +165,64 @@ You can define your own primitive random choice functions using `makeRandomChoic
 
 # Likelihoods and Conditioning
 
-A probabilistic program is only interesting if we introduce some condition or constraint its execution--otherwise, we could just run it forward to obtain samples from the distribution it defines.
+A probabilistic program is only interesting if we introduce some condition or constraint on its execution--otherwise, we could just run it forward to obtain samples from the distribution it defines.
 
-### [randomChoice].observe(value, ...)
+### observe
 
-Adjusts the probability of the current program execution according to the probability of observing `value` drawn from `[randomChoice]` with parameters `...`. The simple example programs above demonstrated
+Every random choice comes equipped with a method to observe (or condition on) a value, instead of drawing one randomly. For example:
 
-### qs.condition(bool)
+	qs.gaussian.observe(0.2, 0.0, 1.0)
 
-### qs.conditionfunc(terrafn)
+This adjusts the probability of the current program execution according to the probability of observing the value `0.2` draw from a standard normal distribution.
 
-### qs.factor(real)
+### qs.condition
 
-### qs.factorfunc(terrafn)
+### qs.conditionfunc
+
+### qs.factor
+
+### qs.factorfunc
 
 
 # Function and Loops
 
-### qs.func(terrafn)
+### qs.func
 
-### qs.method(terramethod)
+### qs.method
 
-### qs.range(lo, hi)
+### qs.range
 
 
-## Programs and Modules
+# Programs and Modules
 
-### qs.program(luafn)
+### qs.program
 
-### qs.module(luafn)
+### qs.module
 
 
 # Inference
 
-### qs.infer(prog, query, method)
+### qs.infer
 
 
 ## Methods
 
-### qs.ForwardSample(nsamps)
+### qs.ForwardSample
 
-### qs.WeightedRejectionSample(nsamps)
+### qs.WeightedRejectionSample
 
-### qs.MCMC(kernel, params)
+### qs.MCMC
 
 
 ## Queries
 
 ### qs.Samples
 
-### qs.Expectation(alsoVariance)
+### qs.Expectation
 
 ### qs.MAP
 
-### qs.Autocorrelation(mean, variance)
+### qs.Autocorrelation
 
 ### qs.Histogram
 
