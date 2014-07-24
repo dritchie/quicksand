@@ -387,9 +387,9 @@ Inference in Quicksand is based on sampling, so inference *methods* are procedur
 
 ### qs.ForwardSample
 
-Draw samples by simply running the program forward repeatedly. This ignores any likelihood or conditioning statements. Useful for testing and debugging, but not a whole lot else. Takes one argument: the number of samples to draw (e.g. `qs.ForwardSample(1000)).
+Draw samples by simply running the program forward repeatedly. This ignores any likelihood or conditioning statements. Useful for testing and debugging, but not a whole lot else. Takes one argument: the number of samples to draw (e.g. `qs.ForwardSample(1000)`).
 
-### qs.WeightedRejectionSample(numsamps)
+### qs.WeightedRejectionSample
 
 Draw samples by forward sampling, but reject any samples that do not satisfy conditioning statements and weight all samples by any likelihood statements. This is the simplest method that respects the full semantics of a probabilistic program, but it's often not very efficient. Useful mostly as a baseline for comparison / sanity checking. Also takes one argument: the number of samples to draw.
 
