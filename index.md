@@ -5,7 +5,7 @@ title: Quicksand
 
 <h1>Getting Started with Quicksand</h1>
 
-Quicksand is a library for [probabilistic programming](http://web.stanford.edu/~ngoodman/papers/POPL2013-abstract.pdf) in the Terra programming language. Since Terra is a low-level language, Quicksand programs are written a level of abstraction comparable to that of C. Users can write these programs directly, or potentially use Quicksand as a compiler target for higher-level/domain-specific languages.
+Quicksand is a library for [probabilistic programming](http://web.stanford.edu/~ngoodman/papers/POPL2013-abstract.pdf) in the Terra programming language. Since Terra is a low-level language, Quicksand programs have a level of abstraction comparable to that of C. Users can write these programs directly, or potentially use Quicksand as a compiler target for higher-level/domain-specific languages.
 
 <h1>Table of Contents</h1>
 * auto-gen TOC:
@@ -466,7 +466,7 @@ Just return the samples directly, leaving it up to you to process them further. 
 
 ### qs.Expectation
 
-Compute the exepcted value of the program by averaging the samples. If the return type of the program is a struct type, then it must overload several operators: binary + and -, binary * (this should be an "inner product"), and division by a real number. This query takes an optional boolean argument that, when `true`, will cause it to also compute and return the variance of the program:
+Compute the exepcted value of the program by averaging the samples. If the return type of the program is a struct type, then it must overload several operators: binary `+` and `-`, binary `*` (this should be an "inner product"), and division by a real number. This query takes an optional boolean argument that, when `true`, will cause it to also compute and return the variance of the program:
 
 	local mean, variance = qs.infer(p, qs.Expectation(true), [method])   
 
