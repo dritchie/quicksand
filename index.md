@@ -437,6 +437,23 @@ The workhorse of probabilistic programming inference. This kernel implements the
 `qs.HMCKernel({stepSize=real, numSteps=int, doStepSizeAdapt=bool})`  
 *Coming soon...*
 
+`qs.MixtureKernel(kernels, weights)`  
+Constructs a kernel that stochastically alternates between multiple different kernels. For example, to make a kernel that only changes structural variables 10% of the time:
+
+	qs.MixtureKernel({qs.TraceMHKernel({doNonstruct=false}),
+					  qs.TraceMHKernel({doStruct=false})},
+					 {0.1, 0.9})
+
+`qs.AnnealingKernel(kernel, annealingFn)`  
+Performs simulated annealing by adjusting the *temperature* of the program (i.e. a scaling factor on its log probability) as MCMC runs. For example, a simple linear annealing schedule could be defined like:
+
+	local maxTemp = 100
+	local minTemp = 0.1
+	qs.AnnealingKernel(qs.TraceMHKernel(),
+					   terra(currIter: int, numIters: int)
+					   	   var t = currIter/double(numIters) 
+					   	   return (1.0-t)*maxTemp + t*minTemp
+					   end)
 
 
 ## Queries
