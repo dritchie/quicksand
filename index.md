@@ -361,14 +361,37 @@ Additionally, you might have some code defined inside a probabilistic program th
 
 # Inference
 
+Finally, we get to the real heart of Quicksand--performing inference on programs.
+
 ### qs.infer
+
+This is the entrypoint for all inference in Quicksand. It takes three arguments: a probabilistic program, an inference query to perform, and a method to use to answer that query. For example:
+
+	local p = qs.program(function()
+		return terra()
+			return qs.gaussian(0.0, 0.2, {struc=false})
+		end
+	end)
+
+	-- qs.infer(program, query, method)
+	local mean = qs.infer(p, qs.Expectation(), qs.ForwardSample(1000))()
+
+`qs.infer` returns a no-argument Terra function, which, when invoked, performs the requested inference (hence the extra set of parens at the end of the last line above).
+
+Next, we'll cover the interface to method and query types, including those that are built-in to Quicksand.
 
 
 ## Methods
 
+Inference in Quicksand is based on sampling, so inference *methods* are procedures that describe how to obtain samples from a probablistic program. Specifically, a method is a Lua function that takes a `qs.program` and return a Terra function that fills in a vector of samples (see `qs/infer.t` for precise details). Quicksand comes with several built-in methods:
+
 ### qs.ForwardSample
 
-### qs.WeightedRejectionSample
+Draw samples by simply running the program forward repeatedly. This ignores any likelihood or conditioning statements. Useful for testing and debugging, but not a whole lot else. Takes one argument: the number of samples to draw (e.g. `qs.ForwardSample(1000)).
+
+### qs.WeightedRejectionSample(numsamps)
+
+Draw samples by forward sampling, but reject any samples that do not satisfy conditioning statements and weight all samples by any likelihood statements. This is the simplest method that respects the full semantics of a probabilistic program, but it's often not very efficient. Useful mostly as a baseline for comparison / sanity checking. Also takes one argument: the number of samples to draw.
 
 ### qs.MCMC
 
