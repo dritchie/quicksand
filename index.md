@@ -109,6 +109,7 @@ Random choices are what make probabilistic programs probabilistic. A program mak
 ### Primitive Random Choice Functions
 
 Quicksand has a number of built-in random choice functions:
+
 - `qs.flip(p)`: blah blah blah
 
 
