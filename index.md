@@ -317,7 +317,7 @@ The argument to `qs.module` is a Lua function that can return anything (but typi
 		end
 	end)
 
-Additionally, you might have some code defined inside a probabilistic program that you'd also like to use outside of it. For instance, the return value of your program is a struct with some probabilistic methods, and you'd like to process the results that inference gives you. `qs.module` facilitates this use case, too, with the `:openAs` method:
+Additionally, you might have some code defined inside a probabilistic program that you'd also like to use outside of it. For instance, the return value of your program is a struct with some probabilistic methods, and you'd like to do some processing on it. `qs.module` facilitates this use case, too, with the `:openAs` method:
 
 	local mod = qs.module(function()
 
