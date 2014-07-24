@@ -18,5 +18,6 @@ Prism.languages.terra = {
 };;
 Prism.languages.quicksand = Prism.languages.extend("terra",
 {
-	'keyword': /\b(qs.program)\b/g
+	// 'qskeyword': /\b(qs.program|qs.module|qs.func|qs.method|qs.real|qs.factor|qs.factorfunc|qs.condition|qs.conditionfunc)\b/g
+	'qskeyword': /qs.[A-Za-z0-9_]+/
 });

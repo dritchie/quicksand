@@ -82,6 +82,10 @@ pre[class*="language-"] {
 	color: #07a;
 }
 
+/* dritchie: for quicksand keywords */
+.token.qskeyword {
+	color: #a87fff;
+}
 
 .token.regex,
 .token.important {
