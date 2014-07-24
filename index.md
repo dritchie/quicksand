@@ -216,14 +216,50 @@ Useful for implementing undirected models such as Ising models and Markov Random
 Is to `qs.factor` what `qs.conditionfunc` is to `qs.condition`. The same addendum about potential computation savings also applies here.
 
 
-# Function and Loops
+# Functions and Loops
+
+Function calls and loops can affect the control flow structure of a program, so Quicksand provides some constructs to help inform inference methods about this structure.
 
 ### qs.func
 
+All Terra functions that make random choices (or whose callees make random choices) should be wrapped with `qs.func`:
+
+	local f = qs.func(terra(m: qs.real, sd: qs.real)
+		return qs.gaussian(m, sd)
+	end)
+
+Slightly different syntax is necessary for recursive functions:
+
+	local g = qs.func()
+	g:define(terra(p: qs.real)
+		if qs.flip(p) then
+			return 0.0
+		else
+			return 1.0 + g(p)
+		end
+	end)
+
+Note that it is entirely possible to use unwrapped Terra functions in your probabilistic programs: Quicksand will not warn you about this (and in fact has no mechanism to do so). Inference will always be correct regardless, but using `qs.func` will make it more efficient for programs that exhibit structure change (and especially for recursive programs).
+
 ### qs.method
+
+A variant of `qs.func` for wrapping struct methods:
+
+	local struct Blob { val: qs.real }
+	Blob.methods.sampleVal = qs.method(terra(self: &Blob)
+		self.val = qs.uniform(0.0, 1.0) end
+	end)
 
 ### qs.range
 
+Provides an iterable range of integers:
+
+	var sum = 0
+	for i in qs.range(0, 10) do
+		sum = sum + int(qs.flip(0.5))
+	end
+
+Other looping constructs, such as native for loops, while loops, or other iterator-based loops, are also perfectly fine to use with Quicksand. However, `qs.range` tracks information about loop nesting, so using it allows more efficient inference in e.g. programs that use nested loops where the number of loop iterations are derived from random choices.
 
 # Programs and Modules
 
