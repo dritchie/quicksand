@@ -374,7 +374,7 @@ This is the entrypoint for all inference in Quicksand. It takes three arguments:
 	end)
 
 	-- qs.infer(program, query, method)
-	local mean = qs.infer(p, qs.Expectation(), qs.ForwardSample(1000))()
+	local samples = qs.infer(p, qs.Samples, qs.ForwardSample(1000))()
 
 `qs.infer` returns a no-argument Terra function, which, when invoked, performs the requested inference (hence the extra set of parens at the end of the last line above).
 
@@ -391,9 +391,51 @@ Draw samples by simply running the program forward repeatedly. This ignores any 
 
 ### qs.WeightedRejectionSample
 
-Draw samples by forward sampling, but reject any samples that do not satisfy conditioning statements and weight all samples by any likelihood statements. This is the simplest method that respects the full semantics of a probabilistic program, but it's often not very efficient. Useful mostly as a baseline for comparison / sanity checking. Also takes one argument: the number of samples to draw.
+Draw samples by forward sampling, but reject any samples that do not satisfy conditioning statements and weight all samples by any likelihood statements. This is the simplest method that respects the full semantics of a probabilistic program, but it's often not very efficient. Useful mostly as a baseline for comparison / sanity checking. Also takes one argument: the number of samples to draw (e.g. `qs.WeightedRejectionSample(1000)`).
 
 ### qs.MCMC
+
+Draw samples by Markov Chain Monte Carlo. This is the go-to method for inference in most cases. It takes two arguments: an MCMC transition kernel, and a table of other parameters:
+
+	local p = qs.program(function()
+		return terra()
+			var sites : bool[100]
+			for i=0,100 do sites[i] = qs.flip(0.5, {struc=false}) end
+			for i=0,99 do 
+				if sites[i] == sites[i+1] then
+					qs.factor(100.0)
+				else
+					qs.factor(-100.0)
+				end
+			end	
+			return sites
+		end
+	end)
+
+	-- qs.MCMC(kernel, params)
+	local samples = qs.infer(p, qs.Samples, qs.MCMC(qs.TraceMHKernel(),
+													{numsamps=1000, lag=1, verbose=true}))
+
+`numsamps`  
+How many samples to draw. Defaults to 1000.
+
+`lag`  
+How many iterations of MCMC should be performed between recorded samples. Increasing this value decreases autocorrelation between samples but increases computation time. Defaults to 1.
+
+`verbose`  
+Whether Quicksand should write out analytics. Can be `true`, `false`, or a C-style `stdio.h` file handle (i.e. a `FILE*`). Defaults to `true`, in which case Quicksand writes to `stdout`.
+
+The actual legwork of MCMC is done by *transition kernels*, which describe how to take a program execution trace and randomly modify some of its random choices such that the stationary distribution defined by doing this over and over again is the same as the distribution defined by the program. You can define your own transition kernels (see `qs/mcmc.t` for the inferface and examples), but Quicksand provides several already that cover many use cases:
+
+`qs.TraceMHKernel({doStruct=bool, doNonstruct=bool})`  
+The workhorse of probabilistic programming inference. This kernel implements the MCMC trace sampler described in Algorithm 2 of [this paper](http://www.mit.edu/~ast/papers/lightweight-mcmc-aistats2011.pdf). It will work on any probabilistic program, though it is not necessarily the most efficient kernel. This is often a good kernel to start with. The optional parameters `doStruct` and `doNonstruct` specify whether the kernel should operate on structural or non-structural random choices. They both default to `true` (i.e. operating on all random choices)
+
+`qs.LARJKernel(annealKernel, {intervals=int, stepsPerInterval=int})`  
+**Coming soon...**
+
+`qs.HMCKernel({stepSize=real, numSteps=int, doStepSizeAdapt=bool})`  
+**Coming soon...**
+
 
 
 ## Queries
