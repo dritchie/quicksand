@@ -97,43 +97,64 @@ Probabilistic programs can naturally represent distributions with a variable num
 In the rest of this document, we'll describe the components that go into building these programs, as well as the procedures available for performing inference on them.
 
 
+## Real Numbers
+
+
 ## Random Choices
 
 
 ## Likelihoods and Conditioning
 
-### qs.condition
+### qs.condition(bool)
 
-### qs.conditionfunc
+### qs.conditionfunc(terrafn)
 
-### qs.factor
+### qs.factor(real)
 
-### qs.factorfunc
+### qs.factorfunc(terrafn)
 
-### [randomChoice].observe
+### [randomChoice].observe(value, ...)
 
 
 ## Function and Loops
 
-### qs.func
+### qs.func(terrafn)
 
-### qs.method
+### qs.method(terramethod)
 
-### qs.range
+### qs.range(lo, hi)
 
 
 ## Programs and Modules
 
-### qs.program
+### qs.program(luafn)
 
-### qs.module
+### qs.module(luafn)
 
 
 ## Inference
 
-### Methods
+### qs.infer(prog, query, method)
 
-#### qs.MCMC
 
-##### qs.TraceMHKernel
+## Methods
+
+### qs.ForwardSample(nsamps)
+
+### qs.WeightedRejectionSample(nsamps)
+
+### qs.MCMC(kernel, params)
+
+
+## Queries
+
+### qs.Samples
+
+### qs.Expectation(alsoVariance)
+
+### qs.MAP
+
+### qs.Autocorrelation(mean, variance)
+
+### qs.Histogram
 
