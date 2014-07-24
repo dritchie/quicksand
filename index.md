@@ -20,7 +20,7 @@ Then just add the following to your `.profile`, `.bashrc`, or equivalent file:
 Quicksand has been tested on OSX and should also work on Linux. On Windows, your mileage may vary.
 
 
-## A Simple Quicksand Program
+## Simple Quicksand Programs
 
 Let's take a look at a simple Quicksand program--a probabilistic "Hello, World," if you will:
 
@@ -97,4 +97,22 @@ Probabilistic programs can naturally represent distributions with a variable num
 In the rest of this document, we'll describe the components that go into building these programs, as well as the procedures available for performing inference on them.
 
 
+## Random Choices
+
+
+## Likelihoods and Conditioning
+
+### qs.condition
+
+### qs.conditionfunc
+
+
+
+## Function and Loops
+
+
+## Programs and Modules
+
+
+## Inference
 
