@@ -458,13 +458,27 @@ Performs simulated annealing by adjusting the *temperature* of the program (i.e.
 
 ## Queries
 
+An inference *query* describes how you want `qs.infer` to interpret the samples it collects using one of the above methods. Again, you can author your own queries (see `qs/infer.t`), but Quicksand provides several common ones:
+
 ### qs.Samples
+
+Just return the samples directly, leaving it up to you to process them further. You are responsible for freeing the memory of the returned vector (by calling `:destruct` on it).
 
 ### qs.Expectation
 
+Compute the exepcted value of the program by averaging the samples. If the return type of the program is a struct type, then it must overload several operators: binary + and -, binary * (this should be an "inner product"), and division by a real number. This query takes an optional boolean argument that, when `true`, will cause it to also compute and return the variance of the program:
+
+	local mean, variance = qs.infer(p, qs.Expectation(true), [method])   
+
 ### qs.MAP
+
+Returns the sample with the largest probability. If this is a struct type, then you are responsible for freeing its memory.
 
 ### qs.Autocorrelation
 
+Computes the autocorrelation of the samples and returns it in a vector (you're responsible for its memory). You can optionally pass in "true" mean and variance values; otherwise, it will use the mean and variance of the samples themselves.
+
 ### qs.Histogram
+
+Returns a normalized histogram of program return values. This only makes sense for programs with discrete return values. The histogram is stored in a hash map (see `qs/lib/hashmap.t`); again, you're responsible for freeing its memory. If the return type of the program is a struct, then it must have the `__hash` method defined.
 
