@@ -250,6 +250,7 @@ A variant of `qs.func` for wrapping struct methods:
 		self.val = qs.uniform(0.0, 1.0) end
 	end)
 
+
 ### qs.range
 
 Provides an iterable range of integers:
