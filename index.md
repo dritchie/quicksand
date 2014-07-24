@@ -20,6 +20,10 @@ Then just add the following to your `.profile`, `.bashrc`, or equivalent file:
 	export QS=[path to quicksand root]
 	export LUA_PATH="$LUA_PATH;$QS/?.t;$QS/?/init.t"
 
+To verify that everything's working correctly, you can run the test suite and check that all tests pass:
+
+	terra tests/testsuite.t
+
 Quicksand has been tested on OSX and should also work on Linux. On Windows, your mileage may vary.
 
 
@@ -249,7 +253,6 @@ A variant of `qs.func` for wrapping struct methods:
 	Blob.methods.sampleVal = qs.method(terra(self: &Blob)
 		self.val = qs.uniform(0.0, 1.0) end
 	end)
-
 
 ### qs.range
 
