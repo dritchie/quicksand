@@ -337,7 +337,17 @@ return qs.infer(qs.program(function()
 end)
 
 expectedValueTest(
-"condition expectation",
+"condition expectation (reject)",
+qs.program(function()
+	return terra()
+		var a = qs.flip(0.5, {struc=false})
+		qs.condition(a)
+		return a
+	end
+end), 1.0, qs.WeightedRejectionSample)
+
+expectedValueTest(
+"condition expectation (mcmc)",
 qs.program(function()
 	return terra()
 		var a = qs.flip(0.5, {struc=false})
@@ -360,10 +370,20 @@ qs.program(function()
 end), 2.0, qs.MCMC)
 
 expectedValueTest(
-"factor expectation",
+"factor expectation (reject)",
 qs.program(function()
 	return terra()
-		var x = qs.uniform(-1.0, 1.0, {struc=false, init=0.0})
+		var x = qs.uniform(-1.0, 1.0, {struc=false})
+		qs.factor([D.gaussian(qs.real)].logprob(x, 0.3, 0.1))
+		return x
+	end
+end), 0.3, qs.WeightedRejectionSample)
+
+expectedValueTest(
+"factor expectation (mcmc)",
+qs.program(function()
+	return terra()
+		var x = qs.uniform(-1.0, 1.0, {struc=false})
 		qs.factor([D.gaussian(qs.real)].logprob(x, 0.3, 0.1))
 		return x
 	end
@@ -383,10 +403,20 @@ qs.program(function()
 end), 0.3, qs.MCMC)
 
 expectedValueTest(
-"observe expectation",
+"observe expectation (reject)",
 qs.program(function()
 	return terra()
-		var x = qs.uniform(-1.0, 1.0, {struc=false, init=0.0})
+		var x = qs.uniform(-1.0, 1.0, {struc=false})
+		qs.gaussian.observe(x, 0.3, 0.1)
+		return x
+	end
+end), 0.3, qs.WeightedRejectionSample)
+
+expectedValueTest(
+"observe expectation (mcmc)",
+qs.program(function()
+	return terra()
+		var x = qs.uniform(-1.0, 1.0, {struc=false})
 		qs.gaussian.observe(x, 0.3, 0.1)
 		return x
 	end
