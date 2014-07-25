@@ -104,12 +104,22 @@ local function expectedValueTest(name, prog, trueExp, method, optparams)
 		local params = {numsamps=numsamps, lag=(optparams.lag or _lag)}
 		methodfn = method(kernel, params)
 	end
-	local inferfn = qs.infer(prog, qs.Expectation(), methodfn)
 
 	local estimates = terralib.newlist()
-	for i=1,runs do
-		estimates:insert(inferfn())
+	local function getEstimates()
+		local inferfn = qs.infer(prog, qs.Expectation(), methodfn)
+		for i=1,runs do
+			estimates:insert(inferfn())
+		end
 	end
+	local success, err = pcall(getEstimates)
+	if not success then
+		print("FAILED! Error message:")
+		print("----------------------------------")
+		print(err)
+		print("----------------------------------")
+	end
+
 	local testmean = 0.0
 	local meanerr = 0.0
 	for _,x in ipairs(estimates) do
