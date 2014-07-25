@@ -466,7 +466,7 @@ Just return the samples directly, leaving it up to you to process them further. 
 
 ### qs.Expectation
 
-Compute the exepcted value of the program by averaging the samples. If the return type of the program is a struct type, then it must overload several operators: binary `+` and `-`, binary `*` (this should be an "inner product"), and division by a real number. This query takes an optional boolean argument that, when `true`, will cause it to also compute and return the variance of the program:
+Compute the exepcted value of the program by averaging the samples. If the return type of the program is a struct type, then it must overload several operators: binary `+` and `-`, binary `*` (this should be an "inner product"), and multiplication and division by a real number. This query takes an optional boolean argument that, when `true`, will cause it to also compute and return the variance of the program:
 
 	local mean, variance = qs.infer(p, qs.Expectation(true), [method])   
 
