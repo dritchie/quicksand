@@ -6,6 +6,8 @@ local globals = util.require("globals")
 local trace = util.require("trace")
 
 
+
+
 -- The number of parameters required by a random choice
 local function getNumParams(sl)
 	return #sl.sample:gettype().parameters
@@ -37,6 +39,7 @@ end
 
 
 
+
 -- Random choices can be passed an optional struct with extra arguments
 -- The following functions assume that the struct is passed in as a 
 --    typed quote.
@@ -51,11 +54,10 @@ local function structHasMember(s, name)
 	return false
 end
 -- These are the options we consider
-local Options = {
+local Options =
+{
 	Structural = "struc",	-- whether the variable is structural or not
-	InitialVal = "init",    -- value to initialize the variable with
-	LowerBound = "lo",		-- lower bound on the variable's value
-	UpperBound = "hi",		-- upper bound on the variable's value
+	InitialVal = "init"     -- value to initialize the variable with
 }
 -- The Structural option must have a compile-time constant (i.e. true or false) value
 local function getStructuralOption(s)
@@ -86,85 +88,90 @@ end
 
 
 
--- Scalar-valued random choices can be subject to lower and upper bounds
-local BoundState = {
-	None = 0,
-	Lower = 1,
-	Upper = 2,
-	LowerUpper = 3
-}
--- The bounding state of a random choice is determined by arguments
---    passed in the optional argument struct.
-local function getBoundState(opts)
-	if not opts then
-		return BoundState.None
-	end
-	local haslo = structHasMember(opts, Options.LowerBound)
-	local hashi = structHasMember(opts, Options.UpperBound)
-	if haslo and hashi then
-		return BoundState.LowerUpper
-	elseif haslo then
-		return BoundState.Lower
-	elseif hashi then
-		return BoundState.Upper
-	else
-		return BoundState.None
-	end
-end
--- We implement bounding via variable transformations
+
+-- Defining bounding behavior for continuous random choices
 local logistic = macro(function(x)
 	return `1.0 / (1.0 + tmath.exp(-x))
 end)
 local invlogistic = macro(function(y)
 	return `-tmath.log(1.0/y - 1.0)
 end)
-local function getBoundingTransforms(boundState, real)
-	local forward = nil
-	local inverse = nil
-	local priorincr = nil
-	-- Bounds only take effect when we're doing HMC w/ AD
-	if (real ~= globals.dualnum) or (boundState == BoundState.None) then
-		forward = function(x, obj) return x end
-		inverse = function(y, obj) return y end
-		priorincr = function(x, obj) return `0.0 end
-	elseif boundState == BoundState.Lower then
-		forward = function(x, obj) return `tmath.exp(x) + obj.lo end
-		inverse = function(y, obj)
-			local z = `tmath.fmax(y, obj.lo + 1e-15)
-			return `tmath.log(z - obj.lo)
-		end
-		priorincr = function(x, obj) return x end
-	elseif boundState == BoundState.Upper then
-		forward = function(x, obj) return `obj.hi - tmath.exp(x) end
-		inverse = function(y, obj)
-			local z = `tmath.fmin(y, obj.hi - 1e-15)
-			return `tmath.log(obj.hi - z)
-		end
-		priorincr = function(x, obj) return x end
-	elseif boundState == BoundState.LowerUpper then
-		forward = function(x, obj)
-			return quote
-				var logit = logistic(x)
-				if x > [-math.huge] and logit == 0.0 then logit = 1e-15 end
-				if x < [math.huge] and logit == 1.0 then logit = [1.0 - 1e-15] end
-				var y = obj.lo + (obj.hi - obj.lo) * logit
-			in
-				y
-			end
-		end
-		inverse = function(y, obj)
-			local z = `tmath.fmax(tmath.fmin(y, obj.hi - 1e-15), obj.lo + 1e-15)
-			local t = `(z - obj.lo) / (obj.hi - obj.lo)
-			return `invlogistic(t)
-		end
-		priorincr = function(x, obj)
-			return `tmath.log(obj.hi - obj.lo) - x - 2.0*tmath.log(1.0 + tmath.exp(-x))
-		end
-	else
-		error("getBoundingTransforms - Unknown bounding state")
+local Bounds =
+{
+	None = 
+	{
+		forwardTransform = macro(function(x) return x end),
+		inverseTransform = macro(function(y) return y end),
+		logprobIncrement = macro(function(x) return `0.0 end),
+		getBoundingParams = S.memoize(function(real)
+			return macro(function(...) return quote end end)
+		end)
+	},
+
+	Lower = function(getLowerBoundFn)
+		return
+		{
+			forwardTransform = macro(function(x, lo)
+				return `tmath.exp(x) + lo
+			end),
+			inverseTransform = macro(function(y, lo)
+				local z = `tmath.fmax(y, lo + 1e-15)
+				return `tmath.log(z - lo)
+			end),
+			logprobIncrement = macro(function(x, lo)
+				return x
+			end),
+			getBoundingParams = getLowerBoundFn
+		}
+	end,
+
+	Upper = function(getUpperBoundFn)
+		return
+		{
+			forwardTransform = macro(function(x, hi)
+				return `hi - tmath.exp(x)
+			end),
+			inverseTransform = macro(function(y, hi)
+				local z = `tmath.fmin(y, hi - 1e-15)
+				return `tmath.log(hi - z)
+			end),
+			logprobIncrement = macro(function(x, hi)
+				return x
+			end),
+			getBoundingParams = getUpperBoundFn
+		}
+	end,
+
+	LowerUpper = function(getBoundsFn)
+		return
+		{
+			forwardTransform = macro(function(x, lo, hi)
+				return quote
+					var logit = logistic(x)
+					if x > [-math.huge] and logit == 0.0 then logit = 1e-15 end
+					if x < [math.huge] and logit == 1.0 then logit = [1.0 - 1e-15] end
+					var y = lo + (hi - lo) * logit
+				in
+					y
+				end
+			end),
+			inverseTransform = macro(function(y, lo, hi)
+				local z = `tmath.fmax(tmath.fmin(y, hi - 1e-15), lo + 1e-15)
+				local t = `(z - lo) / (hi - lo)
+				return `invlogistic(t)
+			end),
+			logprobIncrement = macro(function(x, lo, hi)
+				return `tmath.log(hi - lo) - x - 2.0*tmath.log(1.0 + tmath.exp(-x))
+			end),
+			getBoundingParams = getBoundsFn
+		}
 	end
-	return forward, inverse, priorincr
-end
+
+	-- TODO: Simplex bounds (for dirichlet)
+}
+
+
+
 
 
 -- Generate an S.copy statement when the second argument may be pointer-to-struct
@@ -175,15 +182,19 @@ local ptrSafeCopy = macro(function(self, other)
 end)
 
 
-local function makeRandomChoice(sampleAndLogprob, proposal)
+
+
+
+local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
+
+	bounding = bounding or Bounds.None
 
 	-- The RandomChoice struct records the parameters and value of the random choice
 	--    in the execution trace.
-	local RandomChoice = S.memoize(function(real, isStructural, boundState)
+	local RandomChoice = S.memoize(function(real, isStructural)
 
 		local sl = sampleAndLogprob(real)
 		local propose = proposal and proposal(real) or makeDefaultProposal(sl)
-		local fwd, inv, lpincr = getBoundingTransforms(boundState, real)
 
 		local function paramField(i) return string.format("param%d", i) end
 
@@ -211,20 +222,11 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 		for i,spt in ipairs(StoredParamTypes) do
 			RandomChoiceT.entries:insert({field=paramField(i), type=spt})
 		end
-		local hasLowerBound = (boundState == BoundState.Lower or boundState == BoundState.LowerUpper)
-		if hasLowerBound then
-			RandomChoiceT.entries:insert({field=Options.LowerBound, type=real})
-		end
-		local hasUpperBound = (boundState == BoundState.Upper or boundState == BoundState.LowerUpper)
-		if hasUpperBound then
-			RandomChoiceT.entries:insert({field=Options.UpperBound, type=real})
-		end
 
 		-- Store some properties on the type that other code might want to refer to
 		RandomChoiceT.RealType = real
 		RandomChoiceT.ValueType = ValueType
 		RandomChoiceT.isStructural = isStructural
-		RandomChoiceT.boundState = boundState
 		RandomChoiceT.sampleFunction = sl.sample
 
 		local function paramArgList(self)
@@ -239,24 +241,27 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 			return lst
 		end
 
+		-- Bounds only take effect if we're doing HMC with dual numbers
+		if real ~= globals.dualnum then bounding = Bounds.None end
+		local getBoundingParams = bounding.getBoundingParams(real)
+		local function fwd(x, self)
+			return `bounding.forwardTransform(x, getBoundingParams([paramArgList(self)]))
+		end
+		local function inv(y, self)
+			return `bounding.inverseTransform(y, getBoundingParams([paramArgList(self)]))
+		end
+		local function lpincr(x, self)
+			return `bounding.logprobIncrement(x, getBoundingParams([paramArgList(self)]))
+		end
+
+
 		-- Constructor 1: Has an initial value
 		local paramSyms = ParamTypes:map(function(pt) return symbol(pt) end)
 		local initValSym = symbol(util.isPOD(ValueType) and ValueType or &ValueType)
-		local loHiSyms = terralib.newlist()
-		local loSym = nil
-		local hiSym = nil
-		if hasLowerBound then loSym = symbol(real); loHiSyms:insert(loSym) end
-		if hasUpperBound then hiSym = symbol(real); loHiSyms:insert(hiSym) end
-		terra RandomChoiceT:__init([paramSyms], [initValSym], [loHiSyms]) : {}
+		terra RandomChoiceT:__init([paramSyms], [initValSym]) : {}
 			escape
 				for i=1,#ParamTypes do
 					emit quote ptrSafeCopy(self.[paramField(i)], [paramSyms[i]]) end
-				end
-				if hasLowerBound then
-					emit quote self.[Options.LowerBound] = [loSym] end
-				end
-				if hasUpperBound then
-					emit quote self.[Options.UpperBound] = [hiSym] end
 				end
 			end
 			ptrSafeCopy(self.value, [inv(initValSym, self)])
@@ -266,27 +271,16 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 
 		-- Constructor 2: Has no initial value
 		paramSyms = ParamTypes:map(function(pt) return symbol(pt) end)
-		loHiSyms = terralib.newlist()
-		loSym = nil
-		hiSym = nil
-		if hasLowerBound then loSym = symbol(real); loHiSyms:insert(loSym) end
-		if hasUpperBound then hiSym = symbol(real); loHiSyms:insert(hiSym) end
-		terra RandomChoiceT:__init([paramSyms], [loHiSyms]) : {}
+		terra RandomChoiceT:__init([paramSyms]) : {}
 			-- Draw a sample, then call the other constructor
 			var sampledval = sl.sample([paramSyms])
 			self:__init([paramSyms],
-				        [util.isPOD(ValueType) and sampledval or (`&sampledval)],
-				        [loHiSyms])
+				        [util.isPOD(ValueType) and sampledval or (`&sampledval)])
 		end
 
-		-- Update for a new run of the program, checking for changes
+		-- Update for a new run of the program, checking for parameter changes
 		paramSyms = ParamTypes:map(function(pt) return symbol(pt) end)
-		loHiSyms = terralib.newlist()
-		loSym = nil
-		hiSym = nil
-		if hasLowerBound then loSym = symbol(real); loHiSyms:insert(loSym) end
-		if hasUpperBound then hiSym = symbol(real); loHiSyms:insert(hiSym) end
-		terra RandomChoiceT:update([paramSyms], [loHiSyms]) : {}
+		terra RandomChoiceT:update([paramSyms]) : {}
 			var hasChanges = false
 			escape
 				-- If real is a dual-number type, then we must
@@ -298,12 +292,6 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 							S.rundestructor(self.[paramField(i)])
 							ptrSafeCopy(self.[paramField(i)], [paramSyms[i]])
 						end
-					end
-					if hasLowerBound then
-						emit quote self.[Options.LowerBound] = [loSym] end
-					end
-					if hasUpperBound then
-						emit quote self.[Options.UpperBound] = [hiSym] end
 					end
 				-- Otherwise, we only need to copy/rescore if we found something
 				--    that's changed since last time.
@@ -317,22 +305,6 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 								hasChanges = true
 								S.rundestructor(self.[paramField(i)])
 								ptrSafeCopy(self.[paramField(i)], [paramSyms[i]])
-							end
-						end
-					end
-					if hasLowerBound then
-						emit quote
-							if not (self.[Options.LowerBound] == [loSym]) then
-								hasChanges = true
-								self.[Options.LowerBound] = [loSym]
-							end
-						end
-					end
-					if hasUpperBound then
-						emit quote
-							if not (self.[Options.UpperBound] == [hiSym]) then
-								hasChanges = true
-								self.[Options.UpperBound] = [hiSym]
 							end
 						end
 					end
@@ -408,30 +380,14 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 			opts = args[N]
 			args[N] = nil
 		end
-		local bs = getBoundState(opts)
-		local fwd, inv, lpincr = getBoundingTransforms(bs, globals.real)
 		local isStructural = getStructuralOption(opts)
-		local RandomChoiceT = RandomChoice(globals.real, isStructural, bs)
-		local ValType = sl.sample:gettype().returntype
-		---------------------
-		-- Options to be passed to the RandomChoice constructor or update method
-		-- (initial value, structural/nonstructural, lower/upper bounds)
-		---------------------
-		local ctoropts = terralib.newlist()
-		local updateopts = terralib.newlist()
+		local initVal = nil
 		if structHasMember(opts, Options.InitialVal) then
-			ctoropts:insert((`opts.[Options.InitialVal]))
+			initVal = (`opts.[Options.InitialVal])
 		end
-		if structHasMember(opts, Options.LowerBound) then
-			ctoropts:insert((`opts.[Options.LowerBound]))
-			updateopts:insert((`opts.[Options.LowerBound]))
-		end
-		if structHasMember(opts, Options.UpperBound) then
-			ctoropts:insert((`opts.[Options.UpperBound]))
-			updateopts:insert((`opts.[Options.UpperBound]))
-		end
+		local RandomChoiceT = RandomChoice(globals.real, isStructural)
 		---------------------
-		return trace.lookupRandomChoiceValue(RandomChoiceT, args, ctoropts, updateopts)
+		return trace.lookupRandomChoiceValue(RandomChoiceT, args, initVal)
 	end)
 
 	-- This macro facilitates models where we directly observe the values
@@ -441,16 +397,9 @@ local function makeRandomChoice(sampleAndLogprob, proposal)
 		local sl = sampleAndLogprob(globals.real)
 		local n = getNumParams(sl)
 		local N = #args
-		assert(N == n or N == n+1, "Wrong number of parameters to random choice observation")
-		local opts = nil
-		if N == n+1 then
-			opts = args[N]
-			args[N] = nil
-		end
-		local fwd, inv, lpincr = getBoundingTransforms(getBoundState(opts), globals.real)
+		assert(N == n, "Wrong number of parameters to random choice observation")
 		return quote
-			var untransformedVal = [inv(value, opts)]
-			trace.factor(sl.logprob(value, [args]) + [lpincr(untransformedVal, opts)])
+			trace.factor(sl.logprob(value, [args]))
 		end
 	end)
 
@@ -463,10 +412,8 @@ end
 return
 {
 	makeRandomChoice = makeRandomChoice,
-	Options = Options,
-	BoundState = BoundState,
+	Bounds = Bounds,
 	structHasMember = structHasMember,
-	getStructuralOption = getStructuralOption,
 	exports = 
 	{
 		makeRandomChoice = makeRandomChoice

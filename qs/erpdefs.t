@@ -8,37 +8,6 @@ local globals = util.require("globals")
 
 
 
--- Insert lower and/or upper bounds into an opts struct.
--- Bounds that were already specified are left unchanged.
-local function insertBounds(opts, lo, hi)
-	local LO = erp.Options.LowerBound
-	local HI = erp.Options.UpperBound
-	local INIT = erp.Options.InitialValue
-	local STRUC = erp.Options.Structural
-
-	if not opts then
-		if lo and hi then return `{[LO]=lo, [HI]=hi} end
-		if lo then return `{[LO]=lo} end
-		if hi then return `{[HI]=hi} end
-	end
-
-	local struc = erp.getStructuralOption(opts)
-	local loval = (erp.structHasMember(opts, LO) and `opts.[LO]) or lo
-	local hival = (erp.structHasMember(opts, HI) and `opts.[HI]) or hi
-	if erp.structHasMember(opts, INIT) then
-		if loval and hival then return `{[INIT]=opts.[INIT], [STRUC]=struc, [LO]=loval, [HI]=hival} end
-		if loval then return `{[INIT]=opts.[INIT], [STRUC]=struc, [LO]=loval} end
-		if hival then return `{[INIT]=opts.[INIT], [STRUC]=struc, [HI]=hival} end
-	else
-		if loval and hival then return `{[STRUC]=struc, [LO]=loval, [HI]=hival} end
-		if loval then return `{[STRUC]=struc, [LO]=loval} end
-		if hival then return `{[STRUC]=struc, [HI]=hival} end
-	end
-end
-
-
-
-
 local ERPs = {}
 
 --------------------------------------------
@@ -58,16 +27,15 @@ ERPs.flip = erp.makeRandomChoice(
 
 --------------------------------------------
 
-local uniform = erp.makeRandomChoice(
-	distrib.uniform
+ERPs.uniform = erp.makeRandomChoice(
+	distrib.uniform,
+	nil,
+	erp.Bounds.LowerUpper(function(real)
+		return terra(lo: real, hi: real)
+			return lo, hi
+		end
+	end)
 )
--- Uniforms are lower and upper bounded
-ERPs.uniform = macro(function(lo, hi, opts)
-	return `uniform(lo, hi, [insertBounds(opts, lo, hi)])
-end)
-ERPs.uniform.observe = macro(function(val, lo, hi, opts)
-	return `uniform.observe(val, lo, hi, [insertBounds(opts, lo, hi)])
-end)
 
 --------------------------------------------
 
@@ -86,16 +54,15 @@ ERPs.gaussian = erp.makeRandomChoice(
 
 --------------------------------------------
 
-local gamma = erp.makeRandomChoice(
-	distrib.gamma
+ERPs.gamma = erp.makeRandomChoice(
+	distrib.gamma,
+	nil,
+	erp.Bounds.Lower(function(real)
+		return terra(shape: real, scale: real)
+			return 0.0
+		end
+	end)
 )
--- Gammas are non-negative
-ERPs.gamma = macro(function(shape, scale, opts)
-	return `gamma(shape, scale, [insertBounds(opts, `0.0)])
-end)
-ERPs.gamma.observe = macro(function(val, shape, scale, opts)
-	return `gamma.observe(val, shape, scale, [insertBounds(opts, `0.0)])
-end)
 
 -- Often more convenient to specify a gamma in terms of mean and variance
 ERPs.gammamv = macro(function(m, v, opts)
@@ -107,28 +74,26 @@ ERPs.gammamv = macro(function(m, v, opts)
 		ERPs.gamma(shape, scale, opts)
 	end
 end)
-ERPs.gammamv.observe = macro(function(val, m, v, opts)
-	opts = opts or `{}
+ERPs.gammamv.observe = macro(function(val, m, v)
 	return quote
 		var shape = m*m / v
 		var scale = v / m
 	in
-		ERPs.gamma.observe(val, shape, scale, opts)
+		ERPs.gamma.observe(val, shape, scale)
 	end
 end)
 
 --------------------------------------------
 
-local beta = erp.makeRandomChoice(
-	distrib.beta
+ERPs.beta = erp.makeRandomChoice(
+	distrib.beta,
+	nil,
+	erp.Bounds.LowerUpper(function(real)
+		return terra(a: real, b: real)
+			return 0.0, 1.0
+		end
+	end)
 )
--- Betas are bounded to the range (0,1)
-ERPs.beta = macro(function(a, b, opts)
-	return `beta(a, b, [insertBounds(opts, `0.0, `1.0)])
-end)
-ERPs.beta.observe = macro(function(val, a, b, opts)
-	return `beta.observe(val, a, b, [insertBounds(ops, `0.0, `1.0)])
-end)
 
 -- Often more convenient to specify a beta in terms of mean and variance
 ERPs.betamv = macro(function(m, v, opts)
@@ -141,14 +106,13 @@ ERPs.betamv = macro(function(m, v, opts)
 		ERPs.beta(a, b, opts)
 	end
 end)
-ERPs.betamv.observe = macro(function(val, m, v, opts)
-	opts = opts or `{}
+ERPs.betamv.observe = macro(function(val, m, v)
 	return quote
 		var tmp = m*m - m + v
 		var a = - m * tmp / v
 		var b = (m - 1) * tmp / v
 	in
-		ERPs.beta.observe(val, a, b, opts)
+		ERPs.beta.observe(val, a, b)
 	end
 end)
 
@@ -187,13 +151,12 @@ ERPs.multinomial = macro(function(params, opts)
 		error("multinomial params must be an array or &Vector of reals")
 	end
 end)
-ERPs.multinomial.observe = macro(function(val, params, opts)
-	opts = opts or `{}
+ERPs.multinomial.observe = macro(function(val, params)
 	local T = params:gettype()
 	if T:isarray() and T.type == globals.real then
-		return `[multinomial_array(T.N)].observe(val, params, opts)
+		return `[multinomial_array(T.N)].observe(val, params)
 	elseif T == &S.Vector(globals.real) then
-		return `multinomial_vector(val, params, opts)
+		return `multinomial_vector.observe(val, params)
 	else
 		error("multinomial params must be an array or &Vector of reals")
 	end
@@ -221,13 +184,12 @@ ERPs.dirichlet = macro(function(params, opts)
 		error("dirichlet params must be an array or &Vector of reals")
 	end
 end)
-ERPs.dirichlet.observe = macro(function(val, params, opts)
-	opts = opts or `{}
+ERPs.dirichlet.observe = macro(function(val, params)
 	local T = params:gettype()
 	if T:isarray() and T.type == globals.real then
-		return `[dirichlet_array(T.N)].observe(val, params, opts)
+		return `[dirichlet_array(T.N)].observe(val, params)
 	elseif T == &S.Vector(globals.real) then
-		return `dirichlet_vector(val, params, opts)
+		return `dirichlet_vector.observe(val, params)
 	else
 		error("dirichlet params must be an array or &Vector of reals")
 	end
@@ -247,12 +209,10 @@ local function genScalar(opts, obsval)
 			return `f([args])
 		end)
 	end
-	local LO = erp.Options.LowerBound
-	local HI = erp.Options.UpperBound
 
 	-- Possible options are: mean, vari, lo, hi
-	local haslo = erp.structHasMember(opts, LO)
-	local hashi = erp.structHasMember(opts, HI)
+	local haslo = erp.structHasMember(opts, "lo")
+	local hashi = erp.structHasMember(opts, "hi")
 	local hasmean = erp.structHasMember(opts, "mean")
 	local hasvari = erp.structHasMember(opts, "vari")
 
@@ -323,8 +283,6 @@ end)
 
 
 -- TODO: Wishlist
---    * Extensible bounding behavior, especially simplex bounds for dirichlet
---      (right now it's only safe to use bounds/HMC with scalar variables)
 --    * Circular/spherical distributions (e.g. von Mises, von Mishes-Fisher)
 --    * Other distributions? (matrices, etc.?)
 

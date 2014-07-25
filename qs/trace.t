@@ -663,13 +663,16 @@ end)
 
 -- Look up random choice value in the currently-executing trace
 -- Non-POD values are returned by pointer
-local function lookupRandomChoiceValue(RandomChoiceT, args, ctoropts, updateopts)
+local function lookupRandomChoiceValue(RandomChoiceT, args, initVal)
 	-- If we're doing the random choice type detection compiler pass, then we
 	--    record the use of this type
 	if rcTypeDetectionPass then
 		rcTypesUsed[RandomChoiceT] = true
 	end
 	local ValType = RandomChoiceT.ValueType
+	local initArgs = terralib.newlist()
+	initArgs:insertall(args)
+	if initVal then initArgs:insert(initVal) end
 	return quote
 		var val : ValType
 		-- Only proceed with trace lookup if we're past the type detection pass
@@ -679,11 +682,11 @@ local function lookupRandomChoiceValue(RandomChoiceT, args, ctoropts, updateopts
 					-- If we're currently in a trace update execution, look up the choice value from the
 					--    currently-executing trace.
 					if [isRecordingTrace()] then
-						var rc, foundit = [GlobalTraceType().lookupRandomChoice(RandomChoiceT)]([globalTrace()], [args], [ctoropts])
+						var rc, foundit = [GlobalTraceType().lookupRandomChoice(RandomChoiceT)]([globalTrace()], [initArgs])
 						-- If this choice was retrieved, not created, then we should check if
 						--    the prior probability etc. need to be updated
 						if foundit then
-							rc:update([args], [updateopts])
+							rc:update([args])
 						end
 						-- Regardless, we need to increment the trace's log probability
 						[globalTrace()].logprob = [globalTrace()].logprob + rc.logprob
