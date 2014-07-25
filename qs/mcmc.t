@@ -1,7 +1,7 @@
 local util = terralib.require("qs.lib.util")
 
 local S = util.require("lib.std")
-local globals = util.require("globals")
+local qs = util.require("globals")
 local progmod = util.require("progmodule")
 local trace = util.require("trace")
 local random = util.require("lib.random")
@@ -44,7 +44,7 @@ local function MCMC(kernel, params)
 
 	return function(program)
 		progmod.assertIsProgram(program, "MCMC")
-		local TraceType = trace.RandExecTrace(program, globals.primfloat)
+		local TraceType = trace.RandExecTrace(program, qs.primfloat)
 		local KernelType = kernel(TraceType)
 
 		local terra doMCMC(samples: &S.Vector(infer.SampleType(program)),

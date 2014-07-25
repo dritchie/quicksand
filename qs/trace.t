@@ -1,7 +1,7 @@
 local util = terralib.require("qs.lib.util")
 
 local S = util.require("lib.std")
-local globals = util.require("globals")
+local qs = util.require("globals")
 local Hash = util.require("lib.hash")
 local HashMap = util.require("lib.hashmap")
 
@@ -14,7 +14,7 @@ local HashMap = util.require("lib.hashmap")
 -- The program currently being compiled
 local currentProgram = nil
 
--- The value of globals.real before compilation was invoked.
+-- The value of qs.real before compilation was invoked.
 -- We restore this when compilation is finished.
 local prevReal = nil
 
@@ -36,8 +36,8 @@ function compilation.currentlyCompilingProgram()
 end
 function compilation.beginCompilation(program, real)
 	currentProgram = program
-	prevReal = globals.real
-	globals.real = real
+	prevReal = qs.real
+	qs.real = real
 end
 function compilation.beginRCTypeDetectionPass()
 	rcTypesUsed = {}
@@ -51,7 +51,7 @@ function compilation.endRCTypeDetectionPass()
 end
 function compilation.endCompilation()
 	currentProgram = nil
-	globals.real = prevReal
+	qs.real = prevReal
 end
 
 
@@ -365,9 +365,11 @@ local _RandExecTrace = S.memoize(function(program, real)
 
 	-- Add a RandomDB member for every type of random choice used
 	--   by the program.
-	local rcTypeIndices = terralib.newlist()
+	local rcTypeList = terralib.newlist()
+	local rcTypeIndices = {}
 	local i = 1
 	for rct,_ in pairs(rcTypesUsed) do
+		rcTypeList:insert(rct)
 		rcTypeIndices[rct] = i
 		RandExecTraceT.entries:insert({ field=string.format("rdb%d", i), type=RandomDB(rct) })
 		i = i + 1
@@ -377,7 +379,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 	local function rdbForType(self, RCType)
 		return `self.[string.format("rdb%d", rcTypeIndices[RCType])]
 	end
-	local function emitForAllRCTypes(fn)
+	local function forAllRCTypes(fn)
 		return quote
 			escape	
 				for rct,_ in pairs(rcTypesUsed) do
@@ -387,10 +389,14 @@ local _RandExecTrace = S.memoize(function(program, real)
 		end
 	end
 	local function forAllRDBs(self, fn)
-		return emitForAllRCTypes(function(rct)
+		return forAllRCTypes(function(rct)
 			return fn(rdbForType(self, rct))
 		end)
 	end
+
+	-- Expose this RCType / RDB stuff for other code
+	RandExecTraceT.RandomChoiceTypes = rcTypeList
+	RandExecTraceT.rdbForType = rdbForType
 
 	-- Create the global pointer variable for this trace type
 	local gTrace = globalTracePointer(RandExecTraceT)
@@ -561,13 +567,14 @@ local _RandExecTrace = S.memoize(function(program, real)
 	end
 	RandExecTraceT.methods.addLikelihood:setinlined(true)
 
+
 	-- These two 'filter' functions allow the caller to get the number of random choices
 	--    whose type matches some predicate, or to retrieve such a random choice by index.
 
 	RandExecTraceT.countChoices = memoizeOnPredicate(function(predfn)
 		return terra(self: &RandExecTraceT)
 			var count: uint64 = 0
-			[emitForAllRCTypes(function(rct)
+			[forAllRCTypes(function(rct)
 				if predfn(rct) then
 					return quote count = count + [rdbForType(self, rct)]:countChoices() end
 				else return quote end end
@@ -591,7 +598,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 			local argsyms = argtypes:map(function(t) return symbol(t) end)
 			local terra forwardmethod(self: &Proxy, [argsyms])
 				var base : uint64 = 0
-				[emitForAllRCTypes(function(rct)
+				[forAllRCTypes(function(rct)
 					if predfn(rct) then
 						local method = rct:getmethod(methodname)
 						local i = symbol(uint64)
@@ -656,7 +663,7 @@ end
 local function GlobalTraceType()
 	assert(currentProgram,
 		"Cannot call 'globalTrace()' outside of trace compilation")
-	return RandExecTrace(currentProgram, globals.real)
+	return RandExecTrace(currentProgram, qs.real)
 end
 
 -- Retrieve a global variable pointing to the currently executing trace for
@@ -851,7 +858,7 @@ local function factorfunc(fn)
 	assert(terralib.isfunction(fn),
 		"Argument to qs.factorfunc must be a Terra function")
 	for _,def in ipairs(fn:getdefinitions()) do
-		assert(def:gettype().returntype == globals.real,
+		assert(def:gettype().returntype == qs.real,
 			"Definition of qs.factorfunc must return type 'real'")
 	end
 	fn = func(fn)
@@ -943,6 +950,7 @@ range:setinlined(true)
 return 
 {
 	compilation = compilation,
+	memoizeOnPredicate = memoizeOnPredicate,
 	RandExecTrace = RandExecTrace,
 	lookupRandomChoiceValue = lookupRandomChoiceValue,
 	factor = factor,

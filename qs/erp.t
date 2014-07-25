@@ -2,7 +2,7 @@ local util = terralib.require("qs.lib.util")
 
 local S = util.require("lib.std")
 local tmath = util.require("lib.tmath")
-local globals = util.require("globals")
+local qs = util.require("globals")
 local trace = util.require("trace")
 
 
@@ -202,7 +202,9 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 		local struct RandomChoiceT(S.Object)
 		{
 			logprob: real,
-			active: bool
+			active: bool, 		-- Was this choice reachable in last run of program?
+			needsRescore: bool  -- Do we need to recalculate the prior probability of this choice?
+								--   (because external code i.e. changed its value)
 		}
 		local ValueType = sl.sample:gettype().returntype
 		assert(util.isPOD(ValueType) or ValueType:getmethod("copy"),
@@ -242,7 +244,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 		end
 
 		-- Bounds only take effect if we're doing HMC with dual numbers
-		if real ~= globals.dualnum then bounding = Bounds.None end
+		if real ~= qs.dualnum then bounding = Bounds.None end
 		local getBoundingParams = bounding.getBoundingParams(real)
 		local function fwd(x, self)
 			return `bounding.forwardTransform(x, getBoundingParams([paramArgList(self)]))
@@ -281,12 +283,12 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 		-- Update for a new run of the program, checking for parameter changes
 		paramSyms = ParamTypes:map(function(pt) return symbol(pt) end)
 		terra RandomChoiceT:update([paramSyms]) : {}
-			var hasChanges = false
+			var needsRescore = self.needsRescore
 			escape
 				-- If real is a dual-number type, then we must
 				--    always update everything (otherwise memory bugs...)
-				if real == globals.dualnum then
-					hasChanges = true
+				if real == qs.dualnum then
+					needsRescore = true
 					for i=1,#ParamTypes do
 						emit quote
 							S.rundestructor(self.[paramField(i)])
@@ -302,7 +304,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 						if ParamTypes[i]:ispointertostruct() then p = `@p end
 						emit quote
 							if not util.equal(self.[paramField(i)], p) then
-								hasChanges = true
+								needsRescore = true
 								S.rundestructor(self.[paramField(i)])
 								ptrSafeCopy(self.[paramField(i)], [paramSyms[i]])
 							end
@@ -310,7 +312,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 					end
 				end
 			end
-			if hasChanges then
+			if needsRescore then
 				self:rescore()
 			end
 			self.active = true
@@ -332,6 +334,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 					emit `val
 				end
 			end, [paramArgList(self)]) + [lpincr(`self.value, self)]
+			self.needsRescore = false
 		end
 
 		-- Propose new value, return fwd/rvs proposal probabilities
@@ -348,7 +351,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 			end, [paramArgList(self)])
 			S.rundestructor(currval)
 			self.value = [inv(`self.value, self)]
-			self:rescore()
+			self.needsRescore = true
 			return fwdlp, rvslp
 		end
 
@@ -358,12 +361,23 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 			return fwd(`self.value, self)
 		end)
 
+		-- Get the raw, untransformed stored value of this random choice.
+		terra RandomChoiceT:getUntransformedValue()
+			return self.value
+		end
+		RandomChoiceT.methods.getUntransformedValue:setinlined(true)
 
-		-- TODO later(?):
-		--  * setValue
-		--  * getUntransformedValue / setUntransformedValue
-		--  * getRealComponents / setRealComponents
-		--  * getUntransformedRealComponents / setUntransformedRealComponents
+		-- Set the raw, untransformed stored value of this random choice.
+		terra RandomChoiceT:setUntransformedValue(newval: ValueType)
+			S.rundestructor(self.value)
+			S.copy(self.value, newval)
+			self.needsRescore = true
+		end
+		RandomChoiceT.methods.setUntransformedValue:setinlined(true)
+
+		-- NOTE: get(Untransformed)RealComps needs to return something (perhaps it
+		--    returns the number of components gotten?) in order for forwarding
+		--    in the LARJ RandomChoicePair to have correct semantics.
 
 		return RandomChoiceT
 	end)
@@ -371,7 +385,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 	-- This macro is how the random choice is exposed to client code
 	local erp = macro(function(...)
 		local args = {...}
-		local sl = sampleAndLogprob(globals.real)
+		local sl = sampleAndLogprob(qs.real)
 		local n = getNumParams(sl)
 		local N = #args
 		assert(N == n or N == n+1, "Wrong number of parameters to random choice")
@@ -385,7 +399,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 		if structHasMember(opts, Options.InitialVal) then
 			initVal = (`opts.[Options.InitialVal])
 		end
-		local RandomChoiceT = RandomChoice(globals.real, isStructural)
+		local RandomChoiceT = RandomChoice(qs.real, isStructural)
 		---------------------
 		return trace.lookupRandomChoiceValue(RandomChoiceT, args, initVal)
 	end)
@@ -394,7 +408,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 	--    of some random choices, instead of sampling them
 	erp.observe = macro(function(value, ...)
 		local args = {...}
-		local sl = sampleAndLogprob(globals.real)
+		local sl = sampleAndLogprob(qs.real)
 		local n = getNumParams(sl)
 		local N = #args
 		assert(N == n, "Wrong number of parameters to random choice observation")

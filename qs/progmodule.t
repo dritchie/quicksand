@@ -2,7 +2,7 @@ local util = terralib.require("qs.lib.util")
 
 local S = util.require("lib.std")
 local trace = util.require("trace")
-local globals = util.require("globals")
+local qs = util.require("globals")
 
 
 -- A program is the entity that quicksand performs inference on.
@@ -47,7 +47,7 @@ end)
 local programmt =
 {
 	compile = function(self, optreal)
-		local real = optreal or globals.real
+		local real = optreal or qs.real
 		local progAndRetType = progcompile(self, real)
 		return progAndRetType.prog, progAndRetType.RetType
 	end
@@ -126,14 +126,14 @@ local modulemt =
 {
 	-- open():
 	-- Checks if a program is currently compiling, throws error if not.
-	-- Invokes the specialization function, memoizes them under currProgram and globals.real
+	-- Invokes the specialization function, memoizes them under currProgram and qs.real
 	open = function(self)
 		if not trace.compilation.isCompiling() then
 			error("Cannot call module.open() outside of a probabilistic program")
 		end
 		local currProg = trace.compilation.currentlyCompilingProgram()
 		local typeDetectPass = trace.compilation.isDoingTypeDetectionPass()
-		return modCacheLookupOrCreate(self, currProg, globals.real, typeDetectPass)
+		return modCacheLookupOrCreate(self, currProg, qs.real, typeDetectPass)
 	end,
 
 	-- openAs(program, [real])
@@ -142,10 +142,10 @@ local modulemt =
 	-- If still cache miss, then throw an error
 	openAs = function(self, prog)
 		assertIsProgram(prog, "module.openAs")
-		local val = modCacheLookup(self, prog, globals.real, false)
+		local val = modCacheLookup(self, prog, qs.real, false)
 		if not val then
-			prog:compile(globals.real)
-			val = modCacheLookup(self, prog, globals.real, false)
+			prog:compile(qs.real)
+			val = modCacheLookup(self, prog, qs.real, false)
 			if not val then
 				error("module:openAs(program) -- module must be used in program.")
 			end

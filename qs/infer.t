@@ -1,7 +1,7 @@
 local util = terralib.require("qs.lib.util")
 
 local S = util.require("lib.std")
-local globals = util.require("globals")
+local qs = util.require("globals")
 local progmod = util.require("progmodule")
 local trace = util.require("trace")
 local tmath = util.require("lib.tmath")
@@ -15,10 +15,10 @@ local Sample = S.memoize(function(T)
 	local struct Sample(S.Object)
 	{
 		value: T,
-		logprob: globals.primfloat,
-		loglikelihood: globals.primfloat
+		logprob: qs.primfloat,
+		loglikelihood: qs.primfloat
 	}
-	terra Sample:__init(val: T, lp: globals.primfloat, ll: globals.primfloat) : {}
+	terra Sample:__init(val: T, lp: qs.primfloat, ll: qs.primfloat) : {}
 		self.value = val
 		self.logprob = lp
 		self.loglikelihood = ll
@@ -98,7 +98,7 @@ end
 local function WeightedRejectionSample(numsamps)
 	return function(program)
 		progmod.assertIsProgram(program, "WeightedRejectionSample")
-		local TraceType = trace.RandExecTrace(program, globals.primfloat)
+		local TraceType = trace.RandExecTrace(program, qs.primfloat)
 		return terra(samples: &S.Vector(SampleType(program)))
 			for i=0,numsamps do
 				var tr = TraceType.salloc():init()
@@ -146,7 +146,7 @@ function Expectation(doVariance)
 		local tfn, RetType = program:compile()
 		-- If program's return type is bool or int, then automatically convert to
 		--    a floating-point type for representing real number averages.
-		local AccumType = (RetType:isintegral() or RetType:islogical()) and globals.primfloat or RetType
+		local AccumType = (RetType:isintegral() or RetType:islogical()) and qs.primfloat or RetType
 		return terra(samples: &S.Vector(SampleType(program)))
 			S.assert(samples:size() > 0)
 			var m = AccumType(samples(0).value)
@@ -165,7 +165,7 @@ function Expectation(doVariance)
 			escape
 				if doVariance then
 					emit quote
-						var v : globals.primfloat = 0.0
+						var v : qs.primfloat = 0.0
 						for s in samples do
 							var diff = AccumType(s.value) - m
 							v = v + diff*diff
@@ -215,11 +215,11 @@ function Autocorrelation(mean, variance)
 		progmod.assertIsProgram(program, "MAP")
 
 		local terra withMeanAndVar(samples: &S.Vector(SampleType(program)),
-								   m: ReturnType(program), v: globals.primfloat)
-			var ac : S.Vector(globals.primfloat)
+								   m: ReturnType(program), v: qs.primfloat)
+			var ac : S.Vector(qs.primfloat)
 			ac:init()
 			for t=0,samples:size() do
-				var act = globals.primfloat(0.0)
+				var act = qs.primfloat(0.0)
 				var n = samples:size() - t
 				for i=0,n do
 					var tmp1 = samples(i).value - m
@@ -272,7 +272,7 @@ function Histogram(program)
 		assert(RetType:getmethod("__hash"),
 			"Histogram: struct return type of program must be hashable (have __hash defined)")
 	end
-	local HistType = HashMap(RetType, globals.primfloat)
+	local HistType = HashMap(RetType, qs.primfloat)
 	return terra(samples: &S.Vector(SampleType(program)))
 		var hist : HistType
 		hist:init()

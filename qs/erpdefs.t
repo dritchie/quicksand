@@ -4,7 +4,7 @@ local S = util.require("lib.std")
 local erp = util.require("erp")
 local distrib = util.require("distrib")
 local tmath = util.require("lib.tmath")
-local globals = util.require("globals")
+local qs = util.require("globals")
 
 
 
@@ -143,9 +143,9 @@ local multinomial_vector = erp.makeRandomChoice(
 ERPs.multinomial = macro(function(params, opts)
 	opts = opts or `{}
 	local T = params:gettype()
-	if T:isarray() and T.type == globals.real then
+	if T:isarray() and T.type == qs.real then
 		return `[multinomial_array(T.N)](params, opts)
-	elseif T == &S.Vector(globals.real) then
+	elseif T == &S.Vector(qs.real) then
 		return `multinomial_vector(params, opts)
 	else
 		error("multinomial params must be an array or &Vector of reals")
@@ -153,9 +153,9 @@ ERPs.multinomial = macro(function(params, opts)
 end)
 ERPs.multinomial.observe = macro(function(val, params)
 	local T = params:gettype()
-	if T:isarray() and T.type == globals.real then
+	if T:isarray() and T.type == qs.real then
 		return `[multinomial_array(T.N)].observe(val, params)
-	elseif T == &S.Vector(globals.real) then
+	elseif T == &S.Vector(qs.real) then
 		return `multinomial_vector.observe(val, params)
 	else
 		error("multinomial params must be an array or &Vector of reals")
@@ -176,9 +176,9 @@ local dirichlet_vector = erp.makeRandomChoice(
 ERPs.dirichlet = macro(function(params, opts)
 	opts = opts or `{}
 	local T = params:gettype()
-	if T:isarray() and T.type == globals.real then
+	if T:isarray() and T.type == qs.real then
 		return `[dirichlet_array(T.N)](params, opts)
-	elseif T == &S.Vector(globals.real) then
+	elseif T == &S.Vector(qs.real) then
 		return `dirichlet_vector(params, opts)
 	else
 		error("dirichlet params must be an array or &Vector of reals")
@@ -186,9 +186,9 @@ ERPs.dirichlet = macro(function(params, opts)
 end)
 ERPs.dirichlet.observe = macro(function(val, params)
 	local T = params:gettype()
-	if T:isarray() and T.type == globals.real then
+	if T:isarray() and T.type == qs.real then
 		return `[dirichlet_array(T.N)].observe(val, params)
-	elseif T == &S.Vector(globals.real) then
+	elseif T == &S.Vector(qs.real) then
 		return `dirichlet_vector.observe(val, params)
 	else
 		error("dirichlet params must be an array or &Vector of reals")
