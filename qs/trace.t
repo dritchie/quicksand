@@ -348,6 +348,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 	local struct RandExecTraceT(S.Object)
 	{
 		logprob: real,
+		loglikelihood: real,
 		newlogprob: real,
 		oldlogprob: real,
 		temperature: real,
@@ -396,6 +397,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 
 	terra RandExecTraceT:__init()
 		self.logprob = 0.0
+		self.loglikelihood = 0.0
 		self.newlogprob = 0.0
 		self.oldlogprob = 0.0
 		self.temperature = 1.0
@@ -493,6 +495,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 		gTrace = self
 
 		self.logprob = 0.0
+		self.loglikelihood = 0.0
 		self.newlogprob = 0.0
 		self.oldlogprob = 0.0
 		self.conditionsSatisfied = true
@@ -511,6 +514,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 
 		-- Adjust logprobs by temperature
 		self.logprob = self.logprob / self.temperature
+		self.loglikelihood = self.loglikelihood / self.temperature
 		self.newlogprob = self.newlogprob / self.temperature
 		self.oldlogprob = self.oldlogprob / self.temperature
 
@@ -541,6 +545,21 @@ local _RandExecTrace = S.memoize(function(program, real)
 		end
 	end
 
+	terra RandExecTraceT:checkCondition(cond: bool)
+		self.conditionsSatisfied = self.conditionsSatisfied and cond
+	end
+	RandExecTraceT.methods.checkCondition:setinlined(true)
+
+	terra RandExecTraceT:addPrior(num: real)
+		self.logprob = self.logprob + num
+	end
+	RandExecTraceT.methods.addPrior:setinlined(true)
+
+	terra RandExecTraceT:addLikelihood(num: real)
+		self.logprob = self.logprob + num
+		self.loglikelihood = self.loglikelihood + num
+	end
+	RandExecTraceT.methods.addLikelihood:setinlined(true)
 
 	-- These two 'filter' functions allow the caller to get the number of random choices
 	--    whose type matches some predicate, or to retrieve such a random choice by index.
@@ -689,7 +708,7 @@ local function lookupRandomChoiceValue(RandomChoiceT, args, initVal)
 							rc:update([args])
 						end
 						-- Regardless, we need to increment the trace's log probability
-						[globalTrace()].logprob = [globalTrace()].logprob + rc.logprob
+						[globalTrace()]:addPrior(rc.logprob)
 
 						-- Retrieve and copy the value of the random choice we found/created
 						var x = rc:getValue()
@@ -823,7 +842,7 @@ local factor = macro(function(num)
 	if not rcTypeDetectionPass then
 		return quote
 			if [isRecordingTrace()] then
-				[globalTrace()].logprob = [globalTrace()].logprob + num
+				[globalTrace()]:addLikelihood(num)
 			end
 		end
 	else return quote end end
@@ -841,7 +860,7 @@ local function factorfunc(fn)
 		if not rcTypeDetectionPass then
 			return quote
 				if [isRecordingTrace()] then
-					[globalTrace()].logprob = [globalTrace()].logprob + fn([args])
+					[globalTrace()]:addLikelihood(fn([args]))
 				end
 			end
 		else return quote end end
@@ -855,8 +874,7 @@ local condition = macro(function(pred)
 	if not rcTypeDetectionPass then
 		return quote
 			if [isRecordingTrace()] then
-				[globalTrace()].conditionsSatisfied =
-					[globalTrace()].conditionsSatisfied and pred
+				[globalTrace()]:checkCondition(pred)
 			end
 		end
 	else return quote end end
@@ -874,8 +892,7 @@ local function conditionfunc(fn)
 		if not rcTypeDetectionPass then
 			return quote
 				if [isRecordingTrace()] then
-					[globalTrace()].conditionsSatisfied =
-						[globalTrace()].conditionsSatisfied and fn([args])
+					[globalTrace()]:checkCondition(fn([args]))
 				end
 			end
 		else return quote end end

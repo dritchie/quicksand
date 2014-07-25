@@ -4,24 +4,29 @@ local S = util.require("lib.std")
 local globals = util.require("globals")
 local progmod = util.require("progmodule")
 local trace = util.require("trace")
+local tmath = util.require("lib.tmath")
 local HashMap = util.require("lib.hashmap")
 
 
 -- A sample drawn from a probabilistic program.
--- Just bundles a program return value with a log probability (score).
+-- Just bundles a program return value with a log probability and a 
+--    log likelihood (the non-prior component of log probability)
 local Sample = S.memoize(function(T)
 	local struct Sample(S.Object)
 	{
 		value: T,
-		logprob: globals.primfloat
+		logprob: globals.primfloat,
+		loglikelihood: globals.primfloat
 	}
-	terra Sample:__init(val: T, lp: globals.primfloat) : {}
+	terra Sample:__init(val: T, lp: globals.primfloat, ll: globals.primfloat) : {}
 		self.value = val
 		self.logprob = lp
+		self.loglikelihood = ll
 	end
 	terra Sample:__init(val: T) : {}
 		self.value = val
 		self.logprob = 0.0
+		self.loglikelihood = 0.0
 	end
 	return Sample
 end)
@@ -70,7 +75,7 @@ end
 
 -- Forward sampling is the simplest inference method
 -- (Just run program forward repeatedly)
--- NOTE: scores (logprobs) of samples returned from this method are all 0
+-- NOTE: logprobs and loglikelihoods of samples returned from this method are all 0
 local function ForwardSample(numsamps)
 	return function(program)
 		progmod.assertIsProgram(program, "ForwardSample")
@@ -81,6 +86,7 @@ local function ForwardSample(numsamps)
 				var s = samples:get(samples:size()-1)
 				s.value = tfn()
 				s.logprob = 0.0
+				s.loglikelihood = 0.0
 			end
 		end
 	end
@@ -100,6 +106,7 @@ local function WeightedRejectionSample(numsamps)
 				var s = samples:get(samples:size()-1)
 				S.copy(s.value, tr.returnValue)
 				s.logprob = tr.logprob
+				s.loglikelihood = tr.loglikelihood
 			end
 		end
 	end
@@ -129,6 +136,7 @@ end
 --    * The "+" operator
 --    * The "-" operator
 --    * The "*" operator (as an inner product)
+--    * The scalar "*" operator
 --    * The scalar "/" operator
 -- IMPORTANT: Caller is responsible for the memory of the returned mean object.
 function Expectation(doVariance)
@@ -142,13 +150,17 @@ function Expectation(doVariance)
 		return terra(samples: &S.Vector(SampleType(program)))
 			S.assert(samples:size() > 0)
 			var m = AccumType(samples(0).value)
-			for s in samples do
+			var totalw = 0.0
+			for i=1,samples:size() do
+				var s = samples:get(i)
+				var w = tmath.exp(s.loglikelihood)
+				totalw = totalw + w
 				var _m = m
-				m = m + AccumType(s.value)
+				m = m + w*AccumType(s.value)
 				S.rundestructor(_m)
 			end
 			var _m = m
-			m = m / samples:size()
+			m = m / totalw
 			S.rundestructor(_m)
 			escape
 				if doVariance then

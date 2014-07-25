@@ -66,6 +66,7 @@ local function MCMC(kernel, params)
 					var s = samples:get(samples:size()-1)
 					S.copy(s.value, currTrace.returnValue)
 					s.logprob = currTrace.logprob
+					s.loglikelihood = currTrace.loglikelihood
 				end
 			end
 			var t1 = util.currentTimeInSeconds()
