@@ -251,6 +251,11 @@ local function MixtureKernel(kernels, weights)
 							C.fprintf(outstream, "   %s Acceptance Ratio: %u/%u (%g%%)\n", [tostring(k)], pa, pm, 100.0*double(pa)/pm)
 						end
 					end
+					if k:getmethod("printStats") then
+						emit quote
+							self.[kernelEntry(i)]:printStats(outstream)
+						end
+					end
 				end
 			end
 		end

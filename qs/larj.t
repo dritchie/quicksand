@@ -4,7 +4,11 @@ local S = util.require("lib.std")
 local tmath = util.require("lib.tmath")
 local qs = util.require("globals")
 local trace = util.require("trace")
+local random = util.require("lib.random")
 
+local C = terralib.includecstring [[
+#include <stdio.h>
+]]
 
 
 -- A random choice that associates two address-identical random choices from different traces.
@@ -120,10 +124,9 @@ local InterpolationTrace = S.memoize(function(RandExecTrace)
 		end
 	end
 
-	-- NOTE: Assumes ownership of t1 and t2 (i.e. does not copy)
 	terra InterpolationTrace:__init(t1: &RandExecTrace, t2: &RandExecTrace)
-		self.trace1 = @t1
-		self.trace2 = @t2
+		S.copy(self.trace1, @t1)
+		S.copy(self.trace2, @t2)
 		self.alpha = 0.0
 		self:buildPairedChoiceLists()
 	end
@@ -145,7 +148,7 @@ local InterpolationTrace = S.memoize(function(RandExecTrace)
 			--    traces and all choices unique to trace1, plus some (but not necessarily all)
 			--    choices unique to trace2.
 			for addr,clist1 in [RandExecTrace.rdbForType(`self.trace1, rct)].choicemap do
-				var clist2 = self.trace2:getPointer(addr)
+				var clist2 = [RandExecTrace.rdbForType(`self.trace2, rct)].choicemap:getPointer(addr)
 				var n1 = clist1:size()
 				var n2 = 0
 				if clist2 ~= nil then n2 = clist2:size() end
@@ -168,7 +171,7 @@ local InterpolationTrace = S.memoize(function(RandExecTrace)
 			end
 			-- Now look through all addresses in trace2 to get any choices unique to trace2
 			for addr,clist2 in [RandExecTrace.rdbForType(`self.trace2, rct)].choicemap do
-				var clist1 = self.trace1:getPointer(addr)
+				var clist1 = [RandExecTrace.rdbForType(`self.trace1, rct)].choicemap:getPointer(addr)
 				if clist1 == nil then
 					for i=0,clist2:size() do
 						var pair = [listForRCType(self, rct)]:insert()
@@ -288,6 +291,124 @@ local InterpolationTrace = S.memoize(function(RandExecTrace)
 	return InterpolationTrace
 
 end)
+
+
+
+-- Performs Locally-annealed reversible-jump MCMC by proposing a random change to a random
+--    structural variable and then running an inner "annealing kernel" to smooth out
+--    disruptions before making an accept/reject decision.
+-- IMPORTANT: The annealing kernel should only apply to non-structural choices.
+-- params are:
+--    * intervals: How many interpolation increments to use (defaults to 0, i.e. vanilla
+--         reversible-jump MCMC)
+--    * stepsPerInt: How many iterations to run the annealing kernel for per increment
+--         (defaults to 1)
+local function LARJKernel(annealKernel, params)
+	local params = params or {}
+	local intervals = params.intervals or 0
+	local stepsPerInt = params.stepsPerInt or 1
+
+	return function(TraceType)
+
+		local AnnealKernel = annealKernel(TraceType)
+		
+		local struct LARJKernel(S.Object)
+		{
+			annealingKernel: AnnealKernel,
+			propsMade: uint64,
+			propsAccepted: uint64
+		}
+
+		terra LARJKernel:__doinit(intervals: uint64, stepsPerInt: uint64)
+			self.annealingKernel:init()
+			self.intervals = intervals
+			self.stepsPerInt = stepsPerInt
+			self.propsMade = 0
+			self.propsAccepted = 0
+		end
+
+		LARJKernel.methods.__init = macro(function(self)
+			return `self:__doinit(intervals, stepsPerInt)
+		end)
+
+		terra LARJKernel:proposalsMade() return self.propsMade end
+		terra LARJKernel:proposalsAccepted() return self.propsAccepted end
+
+		terra LARJKernel:printStats(outstream: &C.FILE)
+			escape
+				if AnnealKernel:getmethod("proposalsMade") and AnnealKernel:getmethod("proposalsAccepted") then
+					emit quote
+						var pm = self.annealingKernel:proposalsMade()
+						var pa = self.annealingKernel:proposalsAccepted()
+						C.fprintf(outstream, "   Annealing Acceptance Ratio: %u/%u (%g%%)\n",
+							pa, pm, 100.0*double(pa)/pm)
+					end
+				end
+			end
+		end
+
+		terra LARJKernel:next(currTrace: &TraceType, iter: uint, numiters: uint)
+			self.propsMade = self.propsMade + 1
+
+			-- Make two copies of the current trace: one will keep its current structure,
+			--    the other will take on some new structure after a proposal.
+			var oldStructTrace = TraceType.salloc():init()
+			var newStructTrace = TraceType.salloc():init()
+
+			-- Pick a structural variable uniformly at random and propose a change to it
+			var oldnumchoices = [TraceType.countChoices({isStructural=true})](newStructTrace)
+			var randindex = random.random() * oldnumchoices
+			var rc = [TraceType.getChoice({isStructural=true})](newStructTrace, randindex)
+			var fwdPropLP, rvsPropLP = rc:proposal()
+			newStructTrace:update(true)
+
+			-- Account for the forward part of the dimension-jumping probability.
+			fwdPropLP = fwdPropLP + newStructTrace.newlogprob - tmath.log(double(oldnumchoices))
+
+			-- Do annealing, if more than zero steps were specified
+			var annealLpRatio = 0.0
+			if self.intervals > 0 and self.stepsPerInt > 0 then
+				local totaliters = self.intervals*self.stepsPerInt
+				var lerpTrace = [InterpolationTrace(TraceType)].salloc():init(oldStructTrace, newStructTrace)
+				for ival=0,self.intervals do
+					lerpTrace.alpha = ival/(self.intervals-1.0)
+					for step=0,self.stepsPerInt do
+						var curriter = ival*self.stepsPerInt + step
+						annealLpRatio = annealLpRatio + lerpTrace.logprob
+						self.annealingKernel:next(lerpTrace, curriter, totaliters)
+						annealLpRatio = annealLpRatio - lerpTrace.logprob
+					end
+				end
+				oldStructTrace:destruct()
+				newStructTrace:destruct()
+				S.copy(oldStructTrace, lerpTrace.trace1)
+				S.copy(newStructTrace, lerpTrace.trace2)
+			end
+
+			-- Accout for the reverse part of the dimension-jumping probability.
+			rvsPropLP = rvsPropLP + oldStructTrace:lpDiff(newStructTrace)
+			var newnumchoices = [TraceType.countChoices({isStructural=true})](newStructTrace)
+			rvsPropLP = rvsPropLP - tmath.log(double(newnumchoices))
+
+			-- Do accept/reject
+			var acceptProb = (newStructTrace.logprob - currTrace.logprob) + rvsPropLP - fwdPropLP + annealLpRatio
+			if newStructTrace.conditionsSatisfied and tmath.log(random.random()) < acceptProb then
+				-- Accept
+				self.propsAccepted = self.propsAccepted + 1
+				util.swap(@currTrace, @newStructTrace)
+			end
+		end
+	end
+end
+
+
+return
+{
+	exports = 
+	{
+		LARJKernel = LARJKernel
+	}
+}
 
 
 

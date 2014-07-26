@@ -551,6 +551,25 @@ local _RandExecTrace = S.memoize(function(program, real)
 		end
 	end
 
+	-- Total logprob from variables 'self' has but 'other' does not
+	terra RandExecTraceT:lpDiff(other: &RandExecTraceT)
+		var total = real(0.0)
+		[forAllRCTypes(function(rct)
+			return quote
+				for addr,clist1 in [rdbForType(self, rct)].choicemap do
+					var clist2 = [rdbForType(other, rct)].choicemap:getPointer(addr)
+					var n1 = clist1:size()
+					var n2 = 0.0
+					if clist2 ~= nil then n2 = clist2:size() end
+					for i=n2,n1 do
+						total = total + clist1(i).choice.logprob
+					end
+				end
+			end
+		end)]
+		return total
+	end
+
 	terra RandExecTraceT:checkCondition(cond: bool)
 		self.conditionsSatisfied = self.conditionsSatisfied and cond
 	end
