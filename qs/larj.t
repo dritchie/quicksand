@@ -5,6 +5,7 @@ local tmath = util.require("lib.tmath")
 local qs = util.require("globals")
 local trace = util.require("trace")
 local random = util.require("lib.random")
+local mcmc = util.require("mcmc")
 
 local C = terralib.includecstring [[
 #include <stdio.h>
@@ -46,8 +47,8 @@ local RandomChoicePair = S.memoize(function(RCType)
 	-- Query whether this choice exists in each trace
 	terra RandomChoicePair:existsInTrace1() return self.exists1 end
 	terra RandomChoicePair:existsInTrace2() return self.exists2 end
-	RandomChoicePair.method.existsInTrace1:setinlined(true)
-	RandomChoicePair.method.existsInTrace2:setinlined(true)
+	RandomChoicePair.methods.existsInTrace1:setinlined(true)
+	RandomChoicePair.methods.existsInTrace2:setinlined(true)
 
 	-- To do proposals, we have one of our random choices propose, and then we set the value
 	--    of the other one.
@@ -84,7 +85,9 @@ local RandomChoicePair = S.memoize(function(RCType)
 	RandomChoicePair.metamethods.__methodmissing = macro(function(methodname, self, ...)
 		local args = terralib.newlist({...})
 		local argtypes = args:map(function(a) return a:gettype() end)
-		return `[getForwardingMethod(methodname, unpack(argtypes))](self, [args])
+		local forwardmethod = getForwardingMethod(methodname, unpack(argtypes))
+		local Tself = self:gettype()
+		return `forwardmethod([Tself:ispointertostruct() and self or (`&self)], [args])
 	end)
 
 	return RandomChoicePair
@@ -106,11 +109,12 @@ local InterpolationTrace = S.memoize(function(RandExecTrace)
 
 	-- For every random choice type used by the RandExecTrace type, create a list of paired choices
 	local rcTypeIndices = {}
-	local function listForRCType(self, RCType) return string.format("rlist%d", rcTypeIndices[RCType]) end
+	local function listForIndex(i) return string.format("rlist%d", i) end
+	local function listForRCType(self, RCType) return `self.[listForIndex(rcTypeIndices[RCType])] end
 	for i,RCType in ipairs(RandExecTrace.RandomChoiceTypes) do
 		rcTypeIndices[RCType] = i
 		local ListType = S.Vector(RandomChoicePair(RCType))
-		InterpolationTrace.entries:insert({field=listForRCType(RCType), type=ListType})
+		InterpolationTrace.entries:insert({field=listForIndex(i), type=ListType})
 	end
 	local function forAllNonStructRCTypes(fn)
 		return quote
@@ -143,39 +147,41 @@ local InterpolationTrace = S.memoize(function(RandExecTrace)
 
 	terra InterpolationTrace:buildPairedChoiceLists()
 		[forAllNonStructRCTypes(function(rct)
-			[listForRCType(self, rct)]:init()
-			-- Look through all addresses in trace1 to get all choices shared by both
-			--    traces and all choices unique to trace1, plus some (but not necessarily all)
-			--    choices unique to trace2.
-			for addr,clist1 in [RandExecTrace.rdbForType(`self.trace1, rct)].choicemap do
-				var clist2 = [RandExecTrace.rdbForType(`self.trace2, rct)].choicemap:getPointer(addr)
-				var n1 = clist1:size()
-				var n2 = 0
-				if clist2 ~= nil then n2 = clist2:size() end
-				var minN = n1; if n2 < n1 then minN = n2 end
-				-- Choices shared by both traces
-				for i=0,minN do
-					var pair = [listForRCType(self, rct)]:insert()
-					pair:init(&clist1(i).choice, &clist2(i).choice)
-				end
-				-- Choices that only trace1 has
-				for i=minN,n1 do
-					var pair = [listForRCType(self, rct)]:insert()
-					pair:init(&clist1(i).choice, 1)
-				end
-				-- Choices that only trace2 has
-				for i=n1,n2 do
-					var pair = [listForRCType(self, rct)]:insert()
-					pair:init(&clist2(i).choice, 2)
-				end
-			end
-			-- Now look through all addresses in trace2 to get any choices unique to trace2
-			for addr,clist2 in [RandExecTrace.rdbForType(`self.trace2, rct)].choicemap do
-				var clist1 = [RandExecTrace.rdbForType(`self.trace1, rct)].choicemap:getPointer(addr)
-				if clist1 == nil then
-					for i=0,clist2:size() do
+			return quote
+				[listForRCType(self, rct)]:init()
+				-- Look through all addresses in trace1 to get all choices shared by both
+				--    traces and all choices unique to trace1, plus some (but not necessarily all)
+				--    choices unique to trace2.
+				for addr,clist1 in [RandExecTrace.rdbForType(`self.trace1, rct)].choicemap do
+					var clist2 = [RandExecTrace.rdbForType(`self.trace2, rct)].choicemap:getPointer(addr)
+					var n1 = clist1.choices:size()
+					var n2 = 0
+					if clist2 ~= nil then n2 = clist2.choices:size() end
+					var minN = n1; if n2 < n1 then minN = n2 end
+					-- Choices shared by both traces
+					for i=0,minN do
 						var pair = [listForRCType(self, rct)]:insert()
-						pair:init(&clist2(i).choice, 2)
+						pair:init(&clist1.choices(i).choice, &clist2.choices(i).choice)
+					end
+					-- Choices that only trace1 has
+					for i=minN,n1 do
+						var pair = [listForRCType(self, rct)]:insert()
+						pair:init(&clist1.choices(i).choice, 1)
+					end
+					-- Choices that only trace2 has
+					for i=n1,n2 do
+						var pair = [listForRCType(self, rct)]:insert()
+						pair:init(&clist2.choices(i).choice, 2)
+					end
+				end
+				-- Now look through all addresses in trace2 to get any choices unique to trace2
+				for addr,clist2 in [RandExecTrace.rdbForType(`self.trace2, rct)].choicemap do
+					var clist1 = [RandExecTrace.rdbForType(`self.trace1, rct)].choicemap:getPointer(addr)
+					if clist1 == nil then
+						for i=0,clist2.choices:size() do
+							var pair = [listForRCType(self, rct)]:insert()
+							pair:init(&clist2.choices(i).choice, 2)
+						end
 					end
 				end
 			end
@@ -243,7 +249,6 @@ local InterpolationTrace = S.memoize(function(RandExecTrace)
 				var base : uint64 = 0
 				[forAllNonStructRCTypes(function(rct)
 					if predfn(rct) then
-						local method = rct:getmethod(methodname)
 						local i = symbol(uint64)
 						local c = symbol(uint64)
 						return quote
@@ -251,7 +256,7 @@ local InterpolationTrace = S.memoize(function(RandExecTrace)
 							var [c] = [listForRCType(`self.owner, rct)]:size()
 							if [i] < [c] then
 								var rc = [listForRCType(`self.owner, rct)]:get([i])
-								return method(rc, [argsyms])
+								return rc:[methodname]([argsyms])
 							end
 							base = base + [c]
 						end
@@ -299,22 +304,26 @@ end)
 --    disruptions before making an accept/reject decision.
 -- IMPORTANT: The annealing kernel should only apply to non-structural choices.
 -- params are:
+--    * annealKernel: defaults to qs.TraceMHKernel({doStruct=false})
 --    * intervals: How many interpolation increments to use (defaults to 0, i.e. vanilla
 --         reversible-jump MCMC)
 --    * stepsPerInt: How many iterations to run the annealing kernel for per increment
 --         (defaults to 1)
-local function LARJKernel(annealKernel, params)
+local function LARJKernel(params)
+	local annealKernel = params.annealKernel or mcmc.exports.TraceMHKernel({doStruct=false})
 	local params = params or {}
 	local intervals = params.intervals or 0
 	local stepsPerInt = params.stepsPerInt or 1
 
 	return function(TraceType)
 
-		local AnnealKernel = annealKernel(TraceType)
+		local AnnealKernel = annealKernel(InterpolationTrace(TraceType))
 		
 		local struct LARJKernel(S.Object)
 		{
 			annealingKernel: AnnealKernel,
+			intervals: uint64,
+			stepsPerInt: uint64,
 			propsMade: uint64,
 			propsAccepted: uint64
 		}
@@ -368,7 +377,7 @@ local function LARJKernel(annealKernel, params)
 			-- Do annealing, if more than zero steps were specified
 			var annealLpRatio = 0.0
 			if self.intervals > 0 and self.stepsPerInt > 0 then
-				local totaliters = self.intervals*self.stepsPerInt
+				var totaliters = self.intervals*self.stepsPerInt
 				var lerpTrace = [InterpolationTrace(TraceType)].salloc():init(oldStructTrace, newStructTrace)
 				for ival=0,self.intervals do
 					lerpTrace.alpha = ival/(self.intervals-1.0)
@@ -381,8 +390,8 @@ local function LARJKernel(annealKernel, params)
 				end
 				oldStructTrace:destruct()
 				newStructTrace:destruct()
-				S.copy(oldStructTrace, lerpTrace.trace1)
-				S.copy(newStructTrace, lerpTrace.trace2)
+				S.copy(@oldStructTrace, lerpTrace.trace1)
+				S.copy(@newStructTrace, lerpTrace.trace2)
 			end
 
 			-- Accout for the reverse part of the dimension-jumping probability.
@@ -398,6 +407,8 @@ local function LARJKernel(annealKernel, params)
 				util.swap(@currTrace, @newStructTrace)
 			end
 		end
+
+		return LARJKernel
 	end
 end
 

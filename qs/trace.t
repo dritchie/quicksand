@@ -558,11 +558,11 @@ local _RandExecTrace = S.memoize(function(program, real)
 			return quote
 				for addr,clist1 in [rdbForType(self, rct)].choicemap do
 					var clist2 = [rdbForType(other, rct)].choicemap:getPointer(addr)
-					var n1 = clist1:size()
-					var n2 = 0.0
-					if clist2 ~= nil then n2 = clist2:size() end
+					var n1 = clist1.choices:size()
+					var n2 = 0
+					if clist2 ~= nil then n2 = clist2.choices:size() end
 					for i=n2,n1 do
-						total = total + clist1(i).choice.logprob
+						total = total + clist1.choices(i).choice.logprob
 					end
 				end
 			end

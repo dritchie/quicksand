@@ -199,7 +199,7 @@ local function MixtureKernel(kernels, weights)
 		-- Insert an entry for every sub-kernel
 		local function kernelEntry(i) return string.format("kernel%d", i-1) end
 		for i,k in ipairs(skernels) do
-			MixtureKernel.entries:insert({name=kernelEntry(i), type=k})
+			MixtureKernel.entries:insert({field=kernelEntry(i), type=k})
 		end
 
 		local weightsyms = weights:map(function(w) return symbol(qs.primfloat) end)
@@ -266,7 +266,7 @@ local function MixtureKernel(kernels, weights)
 				for i,k in ipairs(skernels) do
 					emit quote
 						if randindex == [i-1] then
-							self.[kernelEntry(i)]:next(currTrace)
+							self.[kernelEntry(i)]:next(currTrace, iter, numiters)
 							return
 						end
 					end
@@ -274,6 +274,7 @@ local function MixtureKernel(kernels, weights)
 			end
 		end
 
+		return MixtureKernel
 	end
 end
 
@@ -301,6 +302,7 @@ local function AnnealingKernel(kernel, annealSched)
 			return `self.k:[methodname]([args])
 		end
 
+		return AnnealingKernel
 	end
 end
 

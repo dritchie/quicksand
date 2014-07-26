@@ -23,7 +23,8 @@ addExports(
 	"trace",
 	"progmodule",
 	"infer",
-	"mcmc"
+	"mcmc",
+	"larj"
 )
 
 
