@@ -206,8 +206,9 @@ local InterpolationTrace = S.memoize(function(RandExecTrace)
 		elseif entryname == "conditionsSatisfied" then
 			return `self.trace1.conditionsSatisfied and self.trace2.conditionsSatisfied
 		else
-			error(string.format("no field %s in terra object of type %s",
-								entryname, tostring(InterpolationTrace)))
+			-- error(string.format("no field %s in terra object of type %s",
+			-- 					entryname, tostring(InterpolationTrace)))
+			return `self.trace1.[entryname]
 		end
 	end)
 
