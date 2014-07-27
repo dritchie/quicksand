@@ -161,7 +161,7 @@ local function TraceMHKernel(params)
 			var fwdPropLP, rvsPropLP = rc:proposal()
 			nextTrace:update(rc:isStructural())
 			-- Account for probability changes due to dimension-jumping
-			if nextTrace.newlogprob ~= 0.0 or nextTrace.oldlogprob ~= 0.0 then
+			if rc:isStructural() then
 				var oldnumchoices = numchoices
 				var newnumchoices = [TraceType.countChoices(filter)](nextTrace)
 				fwdPropLP = fwdPropLP + nextTrace.newlogprob - tmath.log(double(oldnumchoices))

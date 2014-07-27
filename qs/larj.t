@@ -312,6 +312,7 @@ end)
 --    * stepsPerInt: How many iterations to run the annealing kernel for per increment
 --         (defaults to 1)
 local function LARJKernel(params)
+	params = params or {}
 	local annealKernel = params.annealKernel or mcmc.exports.TraceMHKernel({doStruct=false})
 	local params = params or {}
 	local intervals = params.intervals or 0
@@ -363,8 +364,8 @@ local function LARJKernel(params)
 
 			-- Make two copies of the current trace: one will keep its current structure,
 			--    the other will take on some new structure after a proposal.
-			var oldStructTrace = TraceType.salloc():init()
-			var newStructTrace = TraceType.salloc():init()
+			var oldStructTrace = TraceType.salloc():copy(currTrace)
+			var newStructTrace = TraceType.salloc():copy(currTrace)
 
 			-- Pick a structural variable uniformly at random and propose a change to it
 			var oldnumchoices = [TraceType.countChoices({isStructural=true})](newStructTrace)

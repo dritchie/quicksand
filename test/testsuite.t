@@ -118,6 +118,7 @@ local function expectedValueTest(name, prog, trueExp, method, optparams)
 		print("----------------------------------")
 		print(err)
 		print("----------------------------------")
+		return
 	end
 
 	local testmean = 0.0
@@ -132,6 +133,7 @@ local function expectedValueTest(name, prog, trueExp, method, optparams)
 		print(string.format("FAILED! Expected value was %g, should have been %g", testmean, trueExp))
 	else
 		print("passed.")
+		-- print(string.format("passed (expected val: %g)", testmean))
 		testsPassed:set(testsPassed:get() + 1)
 	end
 end
@@ -507,6 +509,29 @@ qs.program(function()
 		return a
 	end
 end), 0.417, qs.MCMC)
+
+expectedValueTest(
+"transdimensional expectation (LARJ)",
+qs.program(function()
+	return terra()
+		var a = 0.7
+		if qs.flip(0.9) then
+			a = qs.beta(1.0, 5.0, {struc=false})
+		end
+		var b = qs.flip(a, {struc=false})
+		qs.condition(b)
+		return a
+	end
+end),
+0.417,
+qs.MCMC,
+{kernel = qs.MixtureKernel(
+	{
+		qs.LARJKernel({intervals=20}),
+		qs.TraceMHKernel({doStruct=false})
+	},
+	{1.0/3.0, 2.0/3.0}
+)})
 
 expectedValueTest(
 "for loop expectation",
