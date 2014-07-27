@@ -440,7 +440,7 @@ Implements the [Locally-Annealed Reversible-Jump MCMC](http://web.stanford.edu/~
 `qs.MixtureKernel(kernels, weights)`  
 Constructs a kernel that stochastically alternates between multiple different kernels. For example, to make a kernel that uses `qs.LARJKernel` to change structural variables 10% of the time and uses `qs.TraceMHKernel` to change nonstructural variables otherwise:
 
-	qs.MixtureKernel({qs.TraceMHKernel({doNonstruct=false}),
+	qs.MixtureKernel({qs.LARJKernel({intervals=20}),
 					  qs.TraceMHKernel({doStruct=false})},
 					 {0.1, 0.9})
 
