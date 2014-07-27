@@ -112,9 +112,11 @@ local InterpolationTrace = S.memoize(function(RandExecTrace)
 	local function listForIndex(i) return string.format("rlist%d", i) end
 	local function listForRCType(self, RCType) return `self.[listForIndex(rcTypeIndices[RCType])] end
 	for i,RCType in ipairs(RandExecTrace.RandomChoiceTypes) do
-		rcTypeIndices[RCType] = i
-		local ListType = S.Vector(RandomChoicePair(RCType))
-		InterpolationTrace.entries:insert({field=listForIndex(i), type=ListType})
+		if not RCType.isStructural then
+			rcTypeIndices[RCType] = i
+			local ListType = S.Vector(RandomChoicePair(RCType))
+			InterpolationTrace.entries:insert({field=listForIndex(i), type=ListType})
+		end
 	end
 	local function forAllNonStructRCTypes(fn)
 		return quote
@@ -372,7 +374,8 @@ local function LARJKernel(params)
 			newStructTrace:update(true)
 
 			-- Account for the forward part of the dimension-jumping probability.
-			fwdPropLP = fwdPropLP + newStructTrace.newlogprob - tmath.log(double(oldnumchoices))
+			fwdPropLP = fwdPropLP + newStructTrace.newlogprob
+			fwdPropLP = fwdPropLP - tmath.log(double(oldnumchoices))
 
 			-- Do annealing, if more than zero steps were specified
 			var annealLpRatio = 0.0
