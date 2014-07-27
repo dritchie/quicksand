@@ -356,11 +356,13 @@ local _RandExecTrace = S.memoize(function(program, real)
 		returnValue: RetType,
 		-- This starts out false, but is forever after set to true as soon as :update() is run
 		-- IMPORTANT: Everything works out fine, provided the destructor is never invoked before
-		--    the first run of :update(). I don't think this should ever happen.
+		--    the first run of :update(). I don't think this should ever happen, since :update()
+		--    happens in :__init()
 		hasReturnValue: bool,
 
 		addressStack: Address,
-		canStructureChange: bool
+		canStructureChange: bool,
+		numUpdates: uint64
 	}
 
 	-- Add a RandomDB member for every type of random choice used
@@ -412,6 +414,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 
 		self.addressStack:init()
 		self.canStructureChange = true
+		self.numUpdates = 0
 
 		[forAllRDBs(self, function(rdb)
 			return quote
@@ -549,6 +552,8 @@ local _RandExecTrace = S.memoize(function(program, real)
 				S.assert(false)
 			end
 		end
+
+		self.numUpdates = self.numUpdates + 1
 	end
 
 	-- Total logprob from variables 'self' has but 'other' does not
