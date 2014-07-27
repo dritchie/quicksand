@@ -424,21 +424,21 @@ How many samples to draw. Defaults to 1000.
 How many iterations of MCMC should be performed between recorded samples. Increasing this value decreases autocorrelation between samples but increases computation time. Defaults to 1.
 
 `verbose`  
-Whether Quicksand should write out analytics. Can be `true`, `false`, or a C-style `stdio.h` file handle (i.e. a `FILE*`). Defaults to `true`, in which case Quicksand writes to `stdout`.
+Whether Quicksand should write out MCMC analytics. Can be `true`, `false`, or a C-style `stdio.h` file handle (i.e. a `FILE*`). Defaults to `true`, in which case Quicksand writes to `stdout`.
 
 The actual legwork of MCMC is done by *transition kernels*, which describe how to take a program execution trace and randomly modify some of its random choices such that the stationary distribution defined by doing this over and over again is the same as the distribution defined by the program. You can define your own transition kernels (see `qs/mcmc.t` for the inferface and examples), but Quicksand provides several already that cover many use cases:
 
-`qs.TraceMHKernel({doStruct=bool, doNonstruct=bool})`  
+`qs.TraceMHKernel({doStruct, doNonstruct})`  
 The workhorse of probabilistic programming inference. This kernel implements the MCMC trace sampler described in Algorithm 2 of [this paper](http://www.mit.edu/~ast/papers/lightweight-mcmc-aistats2011.pdf). It will work on any probabilistic program, though it is not necessarily the most efficient kernel. This is often a good kernel to start with. The optional parameters `doStruct` and `doNonstruct` specify whether the kernel should operate on structural or non-structural random choices. They both default to `true` (i.e. operating on all random choices)
 
-`qs.LARJKernel(annealKernel, {intervals=int, stepsPerInterval=int})`  
-*Coming soon...*
+`qs.LARJKernel({annealKernel, intervals, stepsPerInterval})`  
+Implements the [Locally-Annealed Reversible-Jump MCMC](http://web.stanford.edu/~ngoodman/papers/owl.pdf) algorithm. This kernel is particularly useful for structure-changing programs where structure changes are persistently rejected using `qs.TraceMHKernel`. The `annealKernel` option should specify a kernel that operates on only nonstructural choices--this is the kernel applied during the annealing transition phase of the algorithm (defaults to `qs.TraceMHKernel({doStruct=false})`). The `intervals` option specifies how many discrete interpolation intervals the algorithm should use in interpolating the old structure to the new structure (defaults to `0`, i.e. vanilla reversible-jump MCMC), and `stepsPerInterval` specifies the number of annealing kernel applications to use for at each interval (defaults to `1`).
 
-`qs.HMCKernel({stepSize=real, numSteps=int, doStepSizeAdapt=bool})`  
+`qs.HMCKernel({stepSize, numSteps, doStepSizeAdapt})`  
 *Coming soon...*
 
 `qs.MixtureKernel(kernels, weights)`  
-Constructs a kernel that stochastically alternates between multiple different kernels. For example, to make a kernel that only changes structural variables 10% of the time:
+Constructs a kernel that stochastically alternates between multiple different kernels. For example, to make a kernel that uses `qs.LARJKernel` to change structural variables 10% of the time and uses `qs.TraceMHKernel` to change nonstructural variables otherwise:
 
 	qs.MixtureKernel({qs.TraceMHKernel({doNonstruct=false}),
 					  qs.TraceMHKernel({doStruct=false})},
