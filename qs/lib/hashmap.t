@@ -99,6 +99,9 @@ local HM = S.memoize(function(K, V, hashfn)
 		S.free(self.__cells)
 	end
 
+	terra HashMap:capacity() return self.__capacity end
+	HashMap.methods.capacity:setinlined(true)
+
 	terra HashMap:size() return self.__size end
 	HashMap.methods.size:setinlined(true)
 

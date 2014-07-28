@@ -98,14 +98,18 @@ end)
 
 
 -- A trace that interpolates the log probabilities of two other traces
+local InterpTrace
 local InterpolationTrace = S.memoize(function(RandExecTrace)
 
-	local struct InterpolationTrace(S.Object)
+	local struct InterpolationTrace(trace.Object)
 	{
 		trace1: RandExecTrace,
 		trace2: RandExecTrace,
 		alpha: qs.primfloat
 	}
+
+	-- How to convert this type into the equivalent type with a different 'real' type
+	function InterpolationTrace:withRealType(real) return InterpTrace(RandExecTrace.withRealType(real)) end
 
 	-- For every random choice type used by the RandExecTrace type, create a list of paired choices
 	local rcTypeIndices = {}
@@ -145,6 +149,14 @@ local InterpolationTrace = S.memoize(function(RandExecTrace)
 		S.copy(self.trace2, other.trace2)
 		self.alpha = other.alpha
 		self:buildPairedChoiceLists()
+	end
+	function InterpolationTrace.__copyFromRealType(real)
+		return terra(self: &InterpolationTrace, other: &InterpolationTrace.withRealType(real))
+			[trace.copyFromRealType(real)](self.trace1, other.trace1)
+			[trace.copyFromRealType(real)](self.trace2, other.trace2)
+			self.alpha = other.alpha
+			self:buildPairedChoiceLists()
+		end
 	end
 
 	terra InterpolationTrace:buildPairedChoiceLists()
@@ -299,7 +311,7 @@ local InterpolationTrace = S.memoize(function(RandExecTrace)
 	return InterpolationTrace
 
 end)
-
+InterpTrace = InterpolationTrace
 
 
 -- Performs Locally-annealed reversible-jump MCMC by proposing a random change to a random

@@ -55,77 +55,226 @@ function compilation.endCompilation()
 end
 
 
+------------------------------------
+---    Trace object metatype     ---
+------------------------------------
+
+-- Any object that is part of a trace (e.g. a random database, a random choice, any of its parameters)
+--    must have the ability to copy itself to an equivalent object defined under a different value for
+--    `qs.real`. To make this simple, I'm defining a metatype for all trace objects called trace.Object,
+--    which does all the same stuff that lib.std.Object does, plus adds additional functions for doing
+--    this real-type-driven-copy.
+
+-- Most of this mirrors the copy functionality from lib.std
+
+function copyFromRealType(real)
+	return macro(function(self, other)
+		local function hascopy(T)
+			if T:isstruct() then return T.copyFromRealType
+			elseif T:isarray() then return hascopy(T.type)
+			else return false end
+		end
+		local T = self:gettype()
+		if T:isstruct() and hascopy(T) then
+			return `[T.copyFromRealType(real)](self, other)
+		elseif T:isarray() and hascopy(T) then
+			return quote
+				var pa = &self
+				for i=0,T.N do
+					[copyFromRealType(real)]((@pa)[i], other[i])
+				end
+			end
+		-- I thought it better to just handle vectors here as a special case
+		elseif T.isstdvector then
+			return quote
+				var pa = &self
+				pa:init(other:size())
+				for i=0,other:size() do
+					pa:insert()
+					[copyFromRealType(real)]((@pa)(i), other(i))
+				end
+			end
+		else
+			return quote self = other end
+		end
+	end)
+end
+
+function copyMembersFromRealType(real)
+	return macro(function(self, other)
+		local T = self:gettype()
+	    local entries = T:getentries()
+	    return quote
+	        escape
+	            for _,e in ipairs(entries) do
+	                if e.field then --not a union
+	                    emit `[copyFromRealType(real)](self.[e.field], other.[e.field])
+	                end
+	            end
+	        end
+	    end
+	end)
+end
+
+function generateCopyFromRealType(real)
+	return macro(function(self, other)
+		local T = self:gettype()
+	    return quote
+	        escape
+	        	if T.__copyFromRealType then
+	        		emit `[T.__copyFromRealType(real)](self, &other)
+	            else
+	                emit `[copyMembersFromRealType(real)](self, other)
+	            end
+	        end
+	    end
+	end)
+end
+
+local function traceObjectMetatype(T)
+	local function assertHasWithRealType()
+		assert(T.withRealType,
+			string.format("trace.Object: type %s must have a 'withRealType' Lua method"))
+	end
+	function T.copyFromRealType(real)
+		assertHasWithRealType()
+		return terra(self: &T, other: &T.withRealType(real))
+			[generateCopyFromRealType(real)](@self, @other)
+			return self
+		end
+	end
+	function T.copyMembersFromRealType(real)
+		assertHasWithRealType()
+		return terra(self: &T, other: &T.withRealType(real))
+			[copyMembersFromRealType(real)](@self, @other)
+		end
+	end
+end
+
+local function Object(T)
+	-- First, the standard Object stuff
+	S.Object(T)
+
+	-- Then, our stuff
+	traceObjectMetatype(T)
+end
+
 
 -------------------------------------
----  Random execution trace type  ---
+---     Random database types     ---
 -------------------------------------
+
+-- A random choice, plus an index that identifies at what point
+--    in the program execution order this random choice was made
+-- (e.g. index 0 = the first random choice made)
+local ChoiceWithIndex
+ChoiceWithIndex = S.memoize(function(RandomChoiceT)
+	local struct ChoiceWithIndexT(Object)
+	{
+		choice: RandomChoiceT,
+		index: uint64
+	}
+	function ChoiceWithIndexT.withRealType(real)
+		return ChoiceWithIndex(RandomChoiceT.withRealType(real))
+	end
+	return ChoiceWithIndexT
+end)
+
+-- A list of indexed random choices, plus a counter
+-- This represents the list of random choices that have been made at a particular
+--    lexical address.
+-- The counter keeps track of how many times we've hit this address in the 
+--    current program execution.
+local IndexedChoicesWithCounter
+IndexedChoicesWithCounter = S.memoize(function(RandomChoiceT)
+	local struct IndexedChoicesWithCounterT(Object)
+	{
+		choices: S.Vector(ChoiceWithIndex(RandomChoiceT)),
+		counter: uint64
+	}
+	function IndexedChoicesWithCounterT.withRealType(real)
+		return IndexedChoicesWithCounter(RandomChoiceT.withRealType(real))
+	end
+	terra IndexedChoicesWithCounterT:__init()
+		self:initmembers()
+		self.counter = 0
+	end
+	return IndexedChoicesWithCounterT
+end)
+
+-- A list of pointers to random choices, plus a counter.
+-- We use this to store a 'flat' list of random choices, which provides
+--    faster lookup during structure-invariant program executions.
+-- The counter keeps track of which random choice we should look up next.
+local ChoicePointersWithCounter
+ChoicePointersWithCounter = S.memoize(function(RandomChoiceT)
+	local struct ChoicePointersWithCounterT(Object)
+	{
+		pointers: S.Vector(&RandomChoiceT),
+		counter: uint64
+	}
+	function ChoicePointersWithCounterT.withRealType(real)
+		return ChoicePointersWithCounter(RandomChoiceT.withRealType(real))
+	end
+	terra ChoicePointersWithCounterT:__init()
+		self:initmembers()
+		self.counter = 0
+	end
+	return ChoicePointersWithCounterT
+end)
 
 local Address = S.Vector(int)
-
 local terra hashAddress(addr: Address)
 	return Hash.rawhash([&int8](addr:get(0)), sizeof(int)*addr:size())
 end
 hashAddress:setinlined(true)
 
+-- Make the HashMap type we use for storing random choices be safe to 
+--    use as a trace object
+local ChoiceMap
+ChoiceMap = S.memoize(function(RandomChoiceT)
+	local ChoiceMapT = HashMap(Address, IndexedChoicesWithCounter(RandomChoiceT), hashAddress)
+	traceObjectMetatype(ChoiceMapT)
+	function ChoiceMapT.withRealType(real)
+		return ChoiceMap(RandomChoiceT.withRealType(real))
+	end
+	function ChoiceMapT.__copyFromRealType(real)
+		return terra(self: &ChoiceMapT, other: &ChoiceMapT.withRealType(real))
+			self.map:init(other:capacity())
+			for addr,clist in other.map do
+				var clistcopyptr = self.map:getOrCreatePointer(addr)
+				[copyFromRealType(real)](@clistcopyptr, clist)
+			end
+		end
+	end
+	return ChoiceMapT
+end)
+
 -- Database of values for a particular type of random choice
-local RandomDB = S.memoize(function(RandomChoiceT)
-
-	-- A random choice, plus an index that identifies at what point
-	--    in the program execution order this random choice was made
-	-- (e.g. index 0 = the first random choice made)
-	local struct ChoiceWithIndex(S.Object)
-	{
-		choice: RandomChoiceT,
-		index: uint64
-	}
-
-	-- A list of indexed random choices, plus a counter
-	-- This represents the list of random choices that have been made at a particular
-	--    lexical address.
-	-- The counter keeps track of how many times we've hit this address in the 
-	--    current program execution.
-	local struct IndexedChoicesWithCounter(S.Object)
-	{
-		choices: S.Vector(ChoiceWithIndex),
-		counter: uint64
-	}
-	terra IndexedChoicesWithCounter:__init()
-		self:initmembers()
-		self.counter = 0
-	end
-
-	-- A list of pointers to random choices, plus a counter.
-	-- We use this to store a 'flat' list of random choices, which provides
-	--    faster lookup during structure-invariant program executions.
-	-- The counter keeps track of which random choice we should look up next.
-	local struct ChoicePointersWithCounter(S.Object)
-	{
-		pointers: S.Vector(&RandomChoiceT),
-		counter: uint64
-	}
-	terra ChoicePointersWithCounter:__init()
-		self:initmembers()
-		self.counter = 0
-	end
+local RandomDB
+RandomDB = S.memoize(function(RandomChoiceT)
 
 	-- Stores both a structured map from addresses to choices as well
 	--    as a flat list of choices.
 	-- Can use the second when we know the control flow structure of the
 	--    program is not changing.
-	local struct RandomDBT(S.Object)
+	local struct RandomDBT(Object)
 	{
 		addressStack: &Address,
 		-- TODO: If we have lots of random choices happening deep in the call stack,
 		--    a hash table will end of storing a ton of redundant information (a complete
 		--    copy of the adddress stack for each key). Maybe experiment with tries instead?
         --    (expected nlogn instead of constant lookup, though...)
-		choicemap: HashMap(Address, IndexedChoicesWithCounter, hashAddress),
-		choicelist: ChoicePointersWithCounter
+		choicemap: ChoiceMap(RandomChoiceT),
+		choicelist: ChoicePointersWithCounter(RandomChoiceT)
 	}
+
+	function RandomDBT.withRealType(real)
+		return RandomDB(RandomChoiceT.withRealType(real))
+	end
 
 	terra RandomDBT:__init(addressStack: &Address)
 		self:initmembers()
-		S.assert(self.choicemap.__cells ~= nil)
 		self.addressStack = addressStack
 	end
 
@@ -134,6 +283,12 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 	terra RandomDBT:__copy(other: &RandomDBT)
 		self:copymembers(other)
 		self.choicelist.pointers:clear()
+	end
+	function RandomDBT.__copyFromRealType(real)
+		return terra(self: &RandomDBT, other: &RandomDBT.withRealType(real))
+			[RandomDBT.copyMembersFromRealType(real)](self, other)
+			self.choicelist.pointers:clear()
+		end
 	end
 
 	terra RandomDBT:lookupNonStructural()
@@ -271,6 +426,12 @@ local RandomDB = S.memoize(function(RandomChoiceT)
 end)
 
 
+
+-------------------------------------
+---  Random execution trace type  ---
+-------------------------------------
+
+
 -- We create one global pointer variable for every type of trace that gets created
 -- When doing inference, the appropriate one of these points to the 'currently executing trace'
 -- (This is a map from trace type to global pointer variable)
@@ -345,7 +506,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 	--    the return type of program)
 	local tprog, RetType = program:compile(real)
 
-	local struct RandExecTraceT(S.Object)
+	local struct RandExecTraceT(Object)
 	{
 		logprob: real,
 		loglikelihood: real,
@@ -364,6 +525,9 @@ local _RandExecTrace = S.memoize(function(program, real)
 		canStructureChange: bool,
 		numUpdates: uint64
 	}
+
+	-- How to convert this type into the equivalent type with a different 'real' type
+	function RandExecTraceT:withRealType(real) return RandExecTrace(program, real) end
 
 	-- Add a RandomDB member for every type of random choice used
 	--   by the program.
@@ -434,8 +598,8 @@ local _RandExecTrace = S.memoize(function(program, real)
 		end
 	end
 
-	-- Can almost just use the default copy constructor, but for a couple things:
-	--    * Need to make the 'addressStack' pointers in the rdbs correct
+	-- Can almost just use the default copy constructor, but for needing 
+	--    to make the 'addressStack' pointers in the rdbs correct
 	terra RandExecTraceT:__copy(other: &RandExecTraceT)
 		self:copymembers(other)
 		[forAllRDBs(self, function(rdb)
@@ -443,6 +607,16 @@ local _RandExecTrace = S.memoize(function(program, real)
 				rdb:setAddressStack(&self.addressStack)
 			end
 		end)]
+	end
+	function RandExecTraceT.__copyFromRealType(real)
+		return terra(self: &RandExecTraceT, other: &RandExecTraceT.withRealType(real))
+			[RandExecTraceT.copyMembersFromRealType(real)](self, other)
+			[forAllRDBs(self, function(rdb)
+				return quote
+					rdb:setAddressStack(&self.addressStack)
+				end
+			end)]
+		end
 	end
 
 	terra RandExecTraceT:setTemperature(temp: real)
@@ -974,10 +1148,11 @@ range:setinlined(true)
 return 
 {
 	compilation = compilation,
+	copyFromRealType = copyFromRealType,
+	Object = Object,
 	memoizeOnPredicate = memoizeOnPredicate,
 	RandExecTrace = RandExecTrace,
 	lookupRandomChoiceValue = lookupRandomChoiceValue,
-	factor = factor,
 	exports = 
 	{
 		func = func,

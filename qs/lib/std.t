@@ -214,6 +214,8 @@ function S.Vector(T,debug)
         _capacity : uint64;
     }
     function Vector.metamethods.__typename() return ("Vector(%s)"):format(tostring(T)) end
+    Vector.isstdvector = true
+    Vector.type = T
     local assert = debug and S.assert or macro(function() return quote end end)
     terra Vector:__init() : {}
         self._data,self._size,self._capacity = nil,0,0

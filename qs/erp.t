@@ -191,7 +191,8 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 
 	-- The RandomChoice struct records the parameters and value of the random choice
 	--    in the execution trace.
-	local RandomChoice = S.memoize(function(real, isStructural)
+	local RandomChoice
+	RandomChoice = S.memoize(function(real, isStructural)
 
 		local sl = sampleAndLogprob(real)
 		local propose = proposal and proposal(real) or makeDefaultProposal(sl)
@@ -199,7 +200,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 		local function paramField(i) return string.format("param%d", i) end
 
 		-- Declare struct type and add members for value, params, and bounds (if needed)
-		local struct RandomChoiceT(S.Object)
+		local struct RandomChoiceT(trace.Object)
 		{
 			logprob: real,
 			active: bool, 		-- Was this choice reachable in last run of program?
@@ -224,6 +225,8 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 		for i,spt in ipairs(StoredParamTypes) do
 			RandomChoiceT.entries:insert({field=paramField(i), type=spt})
 		end
+
+		function RandomChoiceT.withRealType(real) return RandomChoice(real, isStructural) end
 
 		-- Store some properties on the type that other code might want to refer to
 		RandomChoiceT.RealType = real
@@ -413,7 +416,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 		local N = #args
 		assert(N == n, "Wrong number of parameters to random choice observation")
 		return quote
-			trace.factor(sl.logprob(value, [args]))
+			trace.exports.factor(sl.logprob(value, [args]))
 		end
 	end)
 
