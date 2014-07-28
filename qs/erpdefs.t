@@ -282,9 +282,7 @@ end)
 
 
 
--- TODO: Wishlist
---    * Circular/spherical distributions (e.g. von Mises, von Mishes-Fisher)
---    * Other distributions? (matrices, etc.?)
+-- TODO: Circular/spherical distributions (e.g. von Mises, von Mishes-Fisher)
 
 
 
