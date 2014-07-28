@@ -523,6 +523,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 
 		addressStack: Address,
 		canStructureChange: bool,
+		doEvalLikelihoodsAndConditions: bool,
 		numUpdates: uint64
 	}
 
@@ -578,6 +579,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 
 		self.addressStack:init()
 		self.canStructureChange = true
+		self.doEvalLikelihoodsAndConditions = true
 		self.numUpdates = 0
 
 		[forAllRDBs(self, function(rdb)
@@ -670,8 +672,9 @@ local _RandExecTrace = S.memoize(function(program, real)
 		end)
 	end
 
-	terra RandExecTraceT:update(canStructureChange: bool)
+	terra RandExecTraceT:update(canStructureChange: bool, doEvalLikelihoodsAndConditions: bool) : {}
 		self.canStructureChange = canStructureChange
+		self.doEvalLikelihoodsAndConditions = doEvalLikelihoodsAndConditions
 
 		-- Assume ownership of the global trace
 		var prevTrace = gTrace
@@ -729,6 +732,9 @@ local _RandExecTrace = S.memoize(function(program, real)
 
 		self.numUpdates = self.numUpdates + 1
 	end
+	terra RandExecTraceT:update(canStructureChange: bool) : {}
+		self:update(canStructureChange, true)
+	end
 
 	-- Total logprob from variables 'self' has but 'other' does not
 	terra RandExecTraceT:lpDiff(other: &RandExecTraceT)
@@ -764,6 +770,16 @@ local _RandExecTrace = S.memoize(function(program, real)
 		self.loglikelihood = self.loglikelihood + num
 	end
 	RandExecTraceT.methods.addLikelihood:setinlined(true)
+
+
+	RandExecTraceT.methods.copyProbabilities = macro(function(self, other)
+		return quote
+			self.logprob = qs.val(other.logprob)
+			self.loglikelihood = qs.val(other.loglikelihood)
+			self.newlogprob = qs.val(other.newlogprob)
+			self.oldlogprob = qs.val(other.oldlogprob)
+		end
+	end)
 
 
 	-- These two 'filter' functions allow the caller to get the number of random choices
@@ -1041,12 +1057,10 @@ end
 -- 'factor' and 'factorfunc' allow direct increment of the currently-executing trace's log probability
 -- 'factor' takes the logprob increment amount directly
 -- 'factorfunc' wraps a Terra function whose return value should be used as the increment amount
--- TODO: Provide 'isEvaluatingFactors' which can be toggled off to turn off evaluation of
---    (expensive) factors when we're only running the trace to e.g. reconstruct a return value.
 local factor = macro(function(num)
 	if not rcTypeDetectionPass then
 		return quote
-			if [isRecordingTrace()] then
+			if [isRecordingTrace()] and [globalTrace()].doEvalLikelihoodsAndConditions then
 				[globalTrace()]:addLikelihood(num)
 			end
 		end
@@ -1064,7 +1078,7 @@ local function factorfunc(fn)
 		local args = terralib.newlist({...})
 		if not rcTypeDetectionPass then
 			return quote
-				if [isRecordingTrace()] then
+				if [isRecordingTrace()] and [globalTrace()].doEvalLikelihoodsAndConditions then
 					[globalTrace()]:addLikelihood(fn([args]))
 				end
 			end
@@ -1074,11 +1088,10 @@ end
 
 -- 'condition' imposes a hard constraint on the program execution space.
 -- 'conditionfunc' is like 'factorfunc', but for hard constraints.
---  TODO: Use 'isEvaluatingFactors' here, too?
 local condition = macro(function(pred)
 	if not rcTypeDetectionPass then
 		return quote
-			if [isRecordingTrace()] then
+			if [isRecordingTrace()] and [globalTrace()].doEvalLikelihoodsAndConditions then
 				[globalTrace()]:checkCondition(pred)
 			end
 		end
@@ -1096,7 +1109,7 @@ local function conditionfunc(fn)
 		local args = terralib.newlist({...})
 		if not rcTypeDetectionPass then
 			return quote
-				if [isRecordingTrace()] then
+				if [isRecordingTrace()] and [globalTrace()].doEvalLikelihoodsAndConditions then
 					[globalTrace()]:checkCondition(fn([args]))
 				end
 			end

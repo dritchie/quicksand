@@ -111,6 +111,15 @@ end
 -----------------------------------------
 
 
+-- A metatype that adds fields/methods for recording/reporting proposal stats
+local function KernelPropStats(T)
+	T.entries:insert({field=propsMade, type=uint64})
+	T.entries:insert({field=propsAccepted, type=uint64})
+	terra T:proposalsMade() return self.propsMade end
+	terra T:proposalsAccepted() return self.propsAccepted end
+end
+
+
 -- Performs the trace-MH algorithm from the lightweight implementation paper.
 -- (Picks a random choice and proposes a change)
 -- Can optionally specify whether the kernel should apply just to structural choices,
@@ -135,19 +144,13 @@ local function TraceMHKernel(params)
 
 	return function(TraceType)
 		
-		local struct TraceMHKernel(S.Object)
-		{
-			propsMade: uint64,
-			propsAccepted: uint64
-		}
+		local struct TraceMHKernel(S.Object) {}
+		KernelPropStats(TraceMHKernel)
 
 		terra TraceMHKernel:__init()
 			self.propsMade = 0
 			self.propsAccepted = 0
 		end
-
-		terra TraceMHKernel:proposalsMade() return self.propsMade end
-		terra TraceMHKernel:proposalsAccepted() return self.propsAccepted end
 
 		terra TraceMHKernel:next(currTrace: &TraceType, iter: uint, numiters: uint)
 			self.propsMade = self.propsMade + 1
@@ -317,6 +320,7 @@ return
 	exports = 
 	{
 		MCMC = MCMC,
+		KernelPropStats = KernelPropStats,
 		TraceMHKernel = TraceMHKernel,
 		MixtureKernel = MixtureKernel,
 		AnnealingKernel = AnnealingKernel

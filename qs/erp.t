@@ -378,9 +378,58 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 		end
 		RandomChoiceT.methods.setUntransformedValue:setinlined(true)
 
-		-- NOTE: get(Untransformed)RealComps needs to return something (perhaps it
-		--    returns the number of components gotten?) in order for forwarding
-		--    in the LARJ RandomChoicePair to have correct semantics.
+		-- NOTE: get(Untransformed)RealComps returns the number of components gotten
+		--    in order for method forwarding in the LARJ RandomChoicePair to have correct semantics.
+
+		-- Get the raw, untransformed values of all real components of the value
+		--    of this random choice
+		terra RandomChoiceT:getUntransformedRealComps(comps: &S.Vector(real))
+			escape
+				if ValueType == real then
+					emit quote
+						comps:insert(self.value)
+						return 1
+					end
+				elseif ValueType == S.Vector(real) then
+					emit quote
+						for x in self.value do comps:insert(x) end
+						return self.value:size()
+					end
+				elseif ValueType:isstruct() and ValueType:getmethod("getRealComponents") then
+					emit quote
+						return self.value:getRealComponents(comps)
+					end
+				else
+					emit quote end
+				end
+			end
+		end
+
+		-- Set the raw, untransformed values of all real components of the value
+		--    of this random choice
+		terra RandomChoiceT:setUntransformedRealComps(comps: &S.Vector(real), startindex: &uint64)
+			escape
+				if ValueType == real then
+					emit quote
+						self.value = comps(@startindex)
+						@startindex = @startindex + 1
+					end
+				elseif ValueType == S.Vector(real) then
+					emit quote
+						for i=0,self.value:size() do
+							self.value(i) = comps(@startindex + i)
+						end
+						@startindex = @startindex + self.value:size()
+					end
+				elseif ValueType:isstruct() and ValueType:getmethod("getRealComponents") then
+					emit quote
+						self.value:setRealComponents(comps)
+					end
+				else
+					emit quote end
+				end
+			end
+		end
 
 		return RandomChoiceT
 	end)

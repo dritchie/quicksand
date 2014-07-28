@@ -339,10 +339,9 @@ local function LARJKernel(params)
 		{
 			annealingKernel: AnnealKernel,
 			intervals: uint64,
-			stepsPerInt: uint64,
-			propsMade: uint64,
-			propsAccepted: uint64
+			stepsPerInt: uint64
 		}
+		mcmc.KernelPropStats(LARJKernel)
 
 		terra LARJKernel:__doinit(intervals: uint64, stepsPerInt: uint64)
 			self.annealingKernel:init()
@@ -355,9 +354,6 @@ local function LARJKernel(params)
 		LARJKernel.methods.__init = macro(function(self)
 			return `self:__doinit(intervals, stepsPerInt)
 		end)
-
-		terra LARJKernel:proposalsMade() return self.propsMade end
-		terra LARJKernel:proposalsAccepted() return self.propsAccepted end
 
 		terra LARJKernel:printStats(outstream: &C.FILE)
 			escape
