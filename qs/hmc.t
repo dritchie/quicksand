@@ -19,9 +19,7 @@ local struct DualAverage(S.Object)
 	x0: qs.primfloat,
 	lastx: qs.primfloat,
 	k: uint,
-	gamma: qs.primfloat,
-	adapting: bool,
-	minChange: qs.primfloat
+	gamma: qs.primfloat
 }
 
 terra DualAverage:__init(x0: qs.primfloat, gamma: qs.primfloat) : {}
@@ -39,16 +37,14 @@ terra DualAverage:__init() : {}
 end
 
 terra DualAverage:update(g: qs.primfloat)
-	if self.adapting then
-		self.k = self.k + 1
-		var avgeta = 1.0 / (self.k + 10)
-		var xbar_avgeta = tmath.pow(self.k, -0.75)
-		var muk = 0.5 * tmath.sqrt(self.k) / self.gamma
-		self.gbar = avgeta*g + (1-avgeta)*self.gbar
-		self.lastx = self.x0 - muk*self.gbar
-		var oldxbar = self.xbar
-		self.xbar = xbar_avgeta*self.lastx + (1-xbar_avgeta)*self.xbar
-	end
+	self.k = self.k + 1
+	var avgeta = 1.0 / (self.k + 10)
+	var xbar_avgeta = tmath.pow(self.k, -0.75)
+	var muk = 0.5 * tmath.sqrt(self.k) / self.gamma
+	self.gbar = avgeta*g + (1-avgeta)*self.gbar
+	self.lastx = self.x0 - muk*self.gbar
+	var oldxbar = self.xbar
+	self.xbar = xbar_avgeta*self.lastx + (1-xbar_avgeta)*self.xbar
 	return self.lastx
 end
 
@@ -63,7 +59,8 @@ local function HMCKernel(params)
 	params = params or {}
 	local stepSize = params.stepSize or 1.0
 	local numSteps = params.numSteps or 1
-	local doStepSizeAdapt = params.doStepSizeAdapt or true
+	local doStepSizeAdapt = true
+	if params.doStepSizeAdapt ~= nil then doStepSizeAdapt = params.doStepSizeAdapt end
 
 	local adaptRate = 0.05
 	local targetAcceptRate_LMC = 0.574
@@ -175,6 +172,7 @@ local function HMCKernel(params)
 				end
 				-- Turn factor/condition eval off, write to logprob/loglikelihood manually
 				-- (Saves unnecessary computation of evaluating expensive factors/conditions)
+				-- currTrace:update(false)
 				currTrace:update(false, false)
 				currTrace:copyProbabilities(self.dualTrace)
 			end
@@ -333,6 +331,7 @@ local function HMCKernel(params)
 			end
 		end
 
+		-- Code adapted from Stan
 		terra HMCKernel:adaptStepSize(dH: qs.primfloat)
 			var EdH = tmath.exp(dH)
 			if EdH > 1.0 then EdH = 1.0 end

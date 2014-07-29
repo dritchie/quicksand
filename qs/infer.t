@@ -18,6 +18,7 @@ local Sample = S.memoize(function(T)
 		logprob: qs.primfloat,
 		loglikelihood: qs.primfloat
 	}
+	function Sample.metamethods.__typename() return ("Sample(%s)"):format(tostring(T)) end
 	terra Sample:__init(val: T, lp: qs.primfloat, ll: qs.primfloat) : {}
 		self.value = val
 		self.logprob = lp
@@ -43,7 +44,6 @@ end
 local function SampleType(program)
 	return Sample(ReturnType(program))
 end
-
 
 -- 'infer' takes a number of options and returns a Terra function which, when called,
 --    performs the requested inference operation.

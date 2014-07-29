@@ -14,10 +14,6 @@ local HashMap = util.require("lib.hashmap")
 -- The program currently being compiled
 local currentProgram = nil
 
--- The value of qs.real before compilation was invoked.
--- We restore this when compilation is finished.
-local prevReal = nil
-
 -- Compiling probabilistic programs proceeds in two passes.
 -- The first pass detects the types of all random choices used in the program.
 -- This flag indicates whether we are in the first pass.
@@ -26,7 +22,12 @@ local rcTypeDetectionPass = false
 -- This is where we record the types of all random choices used.
 local rcTypesUsed = {}
 
--- Signalling functions exposed to code in other files
+-- Signaling functions exposed to code in other files
+-- NOTE: Because of the recursive dependency in trace compilation
+--    (i.e. what we break using asynchronous compilation), these functions
+--    are re-entrant (e.g. 'beginCompilation' can be called twice before
+--    'endCompilation' is called). Make sure that the implementations here
+--    are aware of that.
 local compilation = {}
 function compilation.isCompiling()
 	return currentProgram ~= nil
@@ -36,7 +37,6 @@ function compilation.currentlyCompilingProgram()
 end
 function compilation.beginCompilation(program, real)
 	currentProgram = program
-	prevReal = qs.real
 	qs.real = real
 end
 function compilation.beginRCTypeDetectionPass()
@@ -51,7 +51,7 @@ function compilation.endRCTypeDetectionPass()
 end
 function compilation.endCompilation()
 	currentProgram = nil
-	qs.real = prevReal
+	qs.real = qs.primfloat
 end
 
 
@@ -226,6 +226,17 @@ ChoicePointersWithCounter = S.memoize(function(RandomChoiceT)
 		self:initmembers()
 		self.counter = 0
 	end
+	-- Can't copy the pointers, because they'd be meaningless
+	terra ChoicePointersWithCounterT:__copy(other: &ChoicePointersWithCounterT)
+		self:__init()
+		self.counter = other.counter
+	end
+	function ChoicePointersWithCounterT.__copyFromRealType(real)
+		return terra(self: &ChoicePointersWithCounterT, other: &ChoicePointersWithCounterT.withRealType(real))
+			self:__init()
+			self.counter = other.counter
+		end
+	end
 	return ChoicePointersWithCounterT
 end)
 
@@ -282,19 +293,6 @@ RandomDB = S.memoize(function(RandomChoiceT)
 	terra RandomDBT:__init(addressStack: &Address)
 		self:initmembers()
 		self.addressStack = addressStack
-	end
-
-	-- Can almost just use the default copy constructor, but for:
-	--    * Need to clear out the flat list of pointers (since those will point to the copy source)
-	terra RandomDBT:__copy(other: &RandomDBT)
-		self:copymembers(other)
-		self.choicelist.pointers:clear()
-	end
-	function RandomDBT.__copyFromRealType(real)
-		return terra(self: &RandomDBT, other: &RandomDBT.withRealType(real))
-			[RandomDBT.copyMembersFromRealType(real)](self, other)
-			self.choicelist.pointers:clear()
-		end
 	end
 
 	terra RandomDBT:lookupNonStructural()
@@ -505,6 +503,7 @@ end
 -- The trace type itself
 local RandExecTrace
 local _RandExecTrace = S.memoize(function(program, real)
+
 	-- Compile the program
 	-- (This is an asynchronous operation that will not finish until this type constructor
 	--    returns. However, it will synchronously compute the 'rcTypesUsed' list and determine
@@ -533,7 +532,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 	}
 
 	-- How to convert this type into the equivalent type with a different 'real' type
-	function RandExecTraceT.withRealType(real) return RandExecTrace(program, real) end
+	function RandExecTraceT.withRealType(realType) return RandExecTrace(program, realType) end
 
 	-- Add a RandomDB member for every type of random choice used
 	--   by the program.
@@ -875,7 +874,7 @@ end)
 --    'tprog' function was compiled to refer to a different instantiation of what should be the
 --    same trace type.
 RandExecTrace = function(program, real)
-	program:compile()
+	program:compile(real)
 	return _RandExecTrace(program, real)
 end
 
