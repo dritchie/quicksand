@@ -291,7 +291,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 				-- If real is a dual-number type, then we must
 				--    always update everything (otherwise memory bugs...)
 				if real == qs.dualnum then
-					needsRescore = true
+					emit quote needsRescore = true end
 					for i=1,#ParamTypes do
 						emit quote
 							S.rundestructor(self.[paramField(i)])

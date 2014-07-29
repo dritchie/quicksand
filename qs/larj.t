@@ -109,7 +109,7 @@ local InterpolationTrace = S.memoize(function(RandExecTrace)
 	}
 
 	-- How to convert this type into the equivalent type with a different 'real' type
-	function InterpolationTrace:withRealType(real) return InterpTrace(RandExecTrace.withRealType(real)) end
+	function InterpolationTrace.withRealType(real) return InterpTrace(RandExecTrace.withRealType(real)) end
 
 	-- For every random choice type used by the RandExecTrace type, create a list of paired choices
 	local rcTypeIndices = {}

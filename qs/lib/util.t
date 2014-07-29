@@ -14,7 +14,7 @@ function isPOD(typ)
 	-- Non-struct types are fine
 	if not typ:isstruct() then return true end
 	-- User-defined ctors, dtors, or copiers are a no-no
-	if typ:getmethod("__init") or typ:getmethod("__destruct") or type:getmethod("__copy") then
+	if typ:getmethod("__init") or typ:getmethod("__destruct") or typ:getmethod("__copy") then
 		return false
 	end
 	-- Also can't have any members that are non-POD

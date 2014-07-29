@@ -113,8 +113,8 @@ end
 
 -- A metatype that adds fields/methods for recording/reporting proposal stats
 local function KernelPropStats(T)
-	T.entries:insert({field=propsMade, type=uint64})
-	T.entries:insert({field=propsAccepted, type=uint64})
+	T.entries:insert({field="propsMade", type=uint64})
+	T.entries:insert({field="propsAccepted", type=uint64})
 	terra T:proposalsMade() return self.propsMade end
 	terra T:proposalsAccepted() return self.propsAccepted end
 end
@@ -317,10 +317,10 @@ end
 
 return
 {
+	KernelPropStats = KernelPropStats,
 	exports = 
 	{
 		MCMC = MCMC,
-		KernelPropStats = KernelPropStats,
 		TraceMHKernel = TraceMHKernel,
 		MixtureKernel = MixtureKernel,
 		AnnealingKernel = AnnealingKernel

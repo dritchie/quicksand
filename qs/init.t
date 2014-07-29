@@ -24,7 +24,8 @@ addExports(
 	"progmodule",
 	"infer",
 	"mcmc",
-	"larj"
+	"larj",
+	"hmc"
 )
 
 

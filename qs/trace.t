@@ -67,16 +67,22 @@ end
 
 -- Most of this mirrors the copy functionality from lib.std
 
+-- TODO: If we implement all __copy methods with macros, then doesn't this whole system
+--    just become uncecessary? It might still be important if we ever need to parameterize
+--    on more than the real type in the future, though. Still, it would reduce code, and it would
+--    feel like less of a hack than some of the 'rawget' stuff below. Though generated code would
+--    be more bloated...
+
 function copyFromRealType(real)
 	return macro(function(self, other)
 		local function hascopy(T)
-			if T:isstruct() then return T.copyFromRealType
+			if T:isstruct() then return rawget(T, "copyFromRealType")
 			elseif T:isarray() then return hascopy(T.type)
 			else return false end
 		end
 		local T = self:gettype()
 		if T:isstruct() and hascopy(T) then
-			return `[T.copyFromRealType(real)](self, other)
+			return `[T.copyFromRealType(real)](&self, &other)
 		elseif T:isarray() and hascopy(T) then
 			return quote
 				var pa = &self
@@ -85,7 +91,7 @@ function copyFromRealType(real)
 				end
 			end
 		-- I thought it better to just handle vectors here as a special case
-		elseif T.isstdvector then
+		elseif rawget(T, "isstdvector") then
 			return quote
 				var pa = &self
 				pa:init(other:size())
@@ -121,8 +127,8 @@ function generateCopyFromRealType(real)
 		local T = self:gettype()
 	    return quote
 	        escape
-	        	if T.__copyFromRealType then
-	        		emit `[T.__copyFromRealType(real)](self, &other)
+	        	if rawget(T, "__copyFromRealType") then
+	        		emit `[T.__copyFromRealType(real)](&self, &other)
 	            else
 	                emit `[copyMembersFromRealType(real)](self, other)
 	            end
@@ -134,7 +140,7 @@ end
 local function traceObjectMetatype(T)
 	local function assertHasWithRealType()
 		assert(T.withRealType,
-			string.format("trace.Object: type %s must have a 'withRealType' Lua method"))
+			string.format("trace.Object: type %s must have a 'withRealType' Lua method", tostring(T)))
 	end
 	function T.copyFromRealType(real)
 		assertHasWithRealType()
@@ -240,9 +246,9 @@ ChoiceMap = S.memoize(function(RandomChoiceT)
 	end
 	function ChoiceMapT.__copyFromRealType(real)
 		return terra(self: &ChoiceMapT, other: &ChoiceMapT.withRealType(real))
-			self.map:init(other:capacity())
-			for addr,clist in other.map do
-				var clistcopyptr = self.map:getOrCreatePointer(addr)
+			self:init(other:capacity())
+			for addr,clist in other do
+				var clistcopyptr, willbetrue = self:getOrCreatePointer(addr)
 				[copyFromRealType(real)](@clistcopyptr, clist)
 			end
 		end
@@ -499,7 +505,6 @@ end
 -- The trace type itself
 local RandExecTrace
 local _RandExecTrace = S.memoize(function(program, real)
-
 	-- Compile the program
 	-- (This is an asynchronous operation that will not finish until this type constructor
 	--    returns. However, it will synchronously compute the 'rcTypesUsed' list and determine
@@ -528,28 +533,29 @@ local _RandExecTrace = S.memoize(function(program, real)
 	}
 
 	-- How to convert this type into the equivalent type with a different 'real' type
-	function RandExecTraceT:withRealType(real) return RandExecTrace(program, real) end
+	function RandExecTraceT.withRealType(real) return RandExecTrace(program, real) end
 
 	-- Add a RandomDB member for every type of random choice used
 	--   by the program.
+	local rcTypesUsed_mine = {}
+	for rct,_ in pairs(rcTypesUsed) do rcTypesUsed_mine[rct] = true end
 	local rcTypeList = terralib.newlist()
 	local rcTypeIndices = {}
 	local i = 1
-	for rct,_ in pairs(rcTypesUsed) do
+	for rct,_ in pairs(rcTypesUsed_mine) do
 		rcTypeList:insert(rct)
 		rcTypeIndices[rct] = i
 		RandExecTraceT.entries:insert({ field=string.format("rdb%d", i), type=RandomDB(rct) })
 		i = i + 1
 	end
-	assert(i > 1,
-		"A probabilistic program must make at least one random choice")
+	assert(i > 1, "A probabilistic program must make at least one random choice")
 	local function rdbForType(self, RCType)
 		return `self.[string.format("rdb%d", rcTypeIndices[RCType])]
 	end
 	local function forAllRCTypes(fn)
 		return quote
 			escape	
-				for rct,_ in pairs(rcTypesUsed) do
+				for rct,_ in pairs(rcTypesUsed_mine) do
 					emit quote [fn(rct)] end
 				end
 			end

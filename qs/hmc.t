@@ -42,8 +42,8 @@ terra DualAverage:update(g: qs.primfloat)
 	if self.adapting then
 		self.k = self.k + 1
 		var avgeta = 1.0 / (self.k + 10)
-		var xbar_avgeta = ad.math.pow(self.k, -0.75)
-		var muk = 0.5 * ad.math.sqrt(self.k) / self.gamma
+		var xbar_avgeta = tmath.pow(self.k, -0.75)
+		var muk = 0.5 * tmath.sqrt(self.k) / self.gamma
 		self.gbar = avgeta*g + (1-avgeta)*self.gbar
 		self.lastx = self.x0 - muk*self.gbar
 		var oldxbar = self.xbar
@@ -160,14 +160,14 @@ local function HMCKernel(params)
 			end
 
 			-- Accept/reject decision
-			var accept = dualTrace.conditionsSatisfied and tmath.log(random.random()) < dH
+			var accept = self.dualTrace.conditionsSatisfied and tmath.log(random.random()) < dH
 			if accept then
 				self.propsAccepted = self.propsAccepted + 1
 				util.swap(self.positions, self.positions_scratch)
 				util.swap(self.gradient, self.gradient_scratch)
 				-- Update currTrace with these new values, run :update to flush them
 				--    through the program.
-				var index = 0U
+				var index = 0ULL
 				var numvars = [TraceType.countChoices({isStructural=false})](currTrace)
 				for i=0,numvars do
 					var rc = [TraceType.getChoice({isStructural=false})](currTrace, i)
@@ -214,7 +214,7 @@ local function HMCKernel(params)
 				end
 
 				-- Initialize the gradient
-				self:update(&self.positions, &self.gradient)
+				self:traceUpdate(&self.positions, &self.gradient)
 
 				-- If this is the very first application of the kernel and we have adaptation on, then:
 				if newn ~= oldn and self.adapting and self.lastTraceSeen == nil then
@@ -269,10 +269,10 @@ local function HMCKernel(params)
 			-- Convert pos into dual numbers
 			veccopy(&self.positions_dual_scratch, pos)
 			-- Copy dual-converted pos back into the trace
-			var index = 0U
-			var numvars = [DualTraceType.countChoices({isStructural=false})](self.dualTrace)
+			var index = 0ULL
+			var numvars = [DualTraceType.countChoices({isStructural=false})](&self.dualTrace)
 			for i=0,numvars do
-				var rc = [DualTraceType.getChoice({isStructural=false})](self.dualTrace, i)
+				var rc = [DualTraceType.getChoice({isStructural=false})](&self.dualTrace, i)
 				rc:setUntransformedRealComps(&self.positions_dual_scratch, &index)
 			end
 			-- Update the trace
