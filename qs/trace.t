@@ -516,7 +516,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 		loglikelihood: real,
 		newlogprob: real,
 		oldlogprob: real,
-		temperature: real,
+		temperature: qs.primfloat,
 		conditionsSatisfied: bool,
 		returnValue: RetType,
 		-- This starts out false, but is forever after set to true as soon as :update() is run
@@ -626,7 +626,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 		end
 	end
 
-	terra RandExecTraceT:setTemperature(temp: real)
+	terra RandExecTraceT:setTemperature(temp: qs.primfloat)
 		self.temperature = temp
 	end
 	RandExecTraceT.methods.setTemperature:setinlined(true)
