@@ -711,7 +711,7 @@ qs.program(function()
 		for i=0,n do 
 			sum = sum + qs.gaussian(0.1, 0.5, {struc=false})
 		end
-		return sum/qs.real(n)
+		return sum/n
 	end
 end), 0.1, qs.MCMC,
 {kernel = qs.MixtureKernel(

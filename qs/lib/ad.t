@@ -100,8 +100,6 @@ num.methods.adj:setinlined(true)
 num.metamethods.__cast = function(from, to, exp)
 	if from:isfloat() and to == num then
 		return `num { DualNumBase.new(exp, nil) }
-	elseif from:isintegral() and to == num then
-		return `num { DualNumBase.new(double(exp), nil) }
 	else
 		error(string.format("ad.t: Cannot cast '%s' to '%s'", tostring(from), tostring(to)))
 	end
