@@ -21,6 +21,13 @@ local rcTypeDetectionPass = false
 
 -- This is where we record the types of all random choices used.
 local rcTypesUsed = {}
+local rcTypesOrdered = terralib.newlist()
+local function recordRandomChoiceTypeUse(RCType)
+	if not rcTypesUsed[RCType] then
+		rcTypesUsed[RCType] = true
+		rcTypesOrdered:insert(RCType)
+	end
+end
 
 -- Signaling functions exposed to code in other files
 -- NOTE: Because of the recursive dependency in trace compilation
@@ -41,6 +48,7 @@ function compilation.beginCompilation(program, real)
 end
 function compilation.beginRCTypeDetectionPass()
 	rcTypesUsed = {}
+	rcTypesOrdered = terralib.newlist()
 	rcTypeDetectionPass = true
 end
 function compilation.isDoingTypeDetectionPass()
@@ -536,18 +544,16 @@ local _RandExecTrace = S.memoize(function(program, real)
 
 	-- Add a RandomDB member for every type of random choice used
 	--   by the program.
+	assert(#rcTypesOrdered > 0, "A probabilistic program must make at least one random choice")
 	local rcTypesUsed_mine = {}
 	for rct,_ in pairs(rcTypesUsed) do rcTypesUsed_mine[rct] = true end
-	local rcTypeList = terralib.newlist()
+	local rcTypesOrdered_mine = terralib.newlist()
+	rcTypesOrdered_mine:insertall(rcTypesOrdered)
 	local rcTypeIndices = {}
-	local i = 1
-	for rct,_ in pairs(rcTypesUsed_mine) do
-		rcTypeList:insert(rct)
+	for i,rct in ipairs(rcTypesOrdered_mine) do
 		rcTypeIndices[rct] = i
 		RandExecTraceT.entries:insert({ field=string.format("rdb%d", i), type=RandomDB(rct) })
-		i = i + 1
 	end
-	assert(i > 1, "A probabilistic program must make at least one random choice")
 	local function rdbForType(self, RCType)
 		return `self.[string.format("rdb%d", rcTypeIndices[RCType])]
 	end
@@ -567,7 +573,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 	end
 
 	-- Expose this RCType / RDB stuff for other code
-	RandExecTraceT.RandomChoiceTypes = rcTypeList
+	RandExecTraceT.RandomChoiceTypes = rcTypesOrdered_mine
 	RandExecTraceT.rdbForType = rdbForType
 
 	-- Create the global pointer variable for this trace type
@@ -912,7 +918,7 @@ local function lookupRandomChoiceValue(RandomChoiceT, args, initVal)
 	-- If we're doing the random choice type detection compiler pass, then we
 	--    record the use of this type
 	if rcTypeDetectionPass then
-		rcTypesUsed[RandomChoiceT] = true
+		recordRandomChoiceTypeUse(RandomChoiceT)
 	end
 	local ValType = RandomChoiceT.ValueType
 	local initArgs = terralib.newlist()

@@ -688,6 +688,39 @@ qs.program(function()
 end), 2.0/(2+5), qs.MCMC,
 {kernel=qs.HMCKernel({numSteps=HMCsteps})})
 
+expectedValueTest(
+"hmc multiple variables expectation",
+qs.program(function()
+	return terra()
+		var sum = qs.real(0.0)
+		for i=0,10 do
+			sum = sum + qs.gaussian(0.1, 0.5, {struc=false})
+		end
+		return sum/10.0
+	end
+end), 0.1, qs.MCMC,
+{kernel=qs.HMCKernel()})
+
+expectedValueTest(
+"hmc structure change expectation",
+qs.program(function()
+	return terra()
+		var n = 2
+		if qs.flip(0.5) then n = 5 end
+		var sum = qs.real(0.0)
+		for i=0,n do 
+			sum = sum + qs.gaussian(0.1, 0.5, {struc=false})
+		end
+		return sum/qs.real(n)
+	end
+end), 0.1, qs.MCMC,
+{kernel = qs.MixtureKernel(
+	{
+		qs.TraceMHKernel({doNonstruct=false}),
+		qs.HMCKernel()
+	},
+	{0.1, 0.9}
+)})
 
 
 

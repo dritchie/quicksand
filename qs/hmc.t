@@ -39,8 +39,8 @@ end
 terra DualAverage:update(g: qs.primfloat)
 	self.k = self.k + 1
 	var avgeta = 1.0 / (self.k + 10)
-	var xbar_avgeta = tmath.pow(self.k, -0.75)
-	var muk = 0.5 * tmath.sqrt(self.k) / self.gamma
+	var xbar_avgeta = tmath.pow(qs.primfloat(self.k), -0.75)
+	var muk = 0.5 * tmath.sqrt(qs.primfloat(self.k)) / self.gamma
 	self.gbar = avgeta*g + (1-avgeta)*self.gbar
 	self.lastx = self.x0 - muk*self.gbar
 	var oldxbar = self.xbar
