@@ -153,6 +153,8 @@ end
 
 print("starting tests...")
 
+qs.initrand()
+
 local terra testLogprobFunctions()
 	assertEq("bernoulli lp (1)", [D.bernoulli(double)].logprob(true, 0.3), M.log(0.3))
 	assertEq("bernoulli lp (2)", [D.bernoulli(double)].logprob(false, 0.3), M.log(0.7))
@@ -717,6 +719,27 @@ end), 0.1, qs.MCMC,
 {kernel = qs.MixtureKernel(
 	{
 		qs.TraceMHKernel({doNonstruct=false}),
+		qs.HMCKernel()
+	},
+	{0.1, 0.9}
+)})
+
+expectedValueTest(
+"hmc larj annealing expectation",
+qs.program(function()
+	return terra()
+		var n = 2
+		if qs.flip(0.5) then n = 5 end
+		var sum = qs.real(0.0)
+		for i=0,n do 
+			sum = sum + qs.gaussian(0.1, 0.5, {struc=false})
+		end
+		return sum/n
+	end
+end), 0.1, qs.MCMC,
+{kernel = qs.MixtureKernel(
+	{
+		qs.LARJKernel({annealKernel=qs.HMCKernel(), intervals=LARJintervals}),
 		qs.HMCKernel()
 	},
 	{0.1, 0.9}

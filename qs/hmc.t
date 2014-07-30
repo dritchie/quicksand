@@ -8,6 +8,7 @@ local mcmc = util.require("mcmc")
 local distrib = util.require("distrib")
 local tmath = util.require("lib.tmath")
 local random = util.require("lib.random")
+local larj = util.require("larj")
 
 
 -- Univariate dual-averaging optimization (for HMC step size adaptation)
@@ -22,7 +23,7 @@ local struct DualAverage(S.Object)
 	gamma: qs.primfloat
 }
 
-terra DualAverage:__init(x0: qs.primfloat, gamma: qs.primfloat) : {}
+terra DualAverage:reinit(x0: qs.primfloat, gamma: qs.primfloat)
 	self.k = 0
 	self.x0 = x0
 	self.lastx = x0
@@ -32,8 +33,8 @@ terra DualAverage:__init(x0: qs.primfloat, gamma: qs.primfloat) : {}
 end
 
 -- So that we can use it with initmembers
-terra DualAverage:__init() : {}
-	self:__init(0.0, 0.0)
+terra DualAverage:__init()
+	self:reinit(0.0, 0.0)
 end
 
 terra DualAverage:update(g: qs.primfloat)
@@ -70,6 +71,8 @@ local function HMCKernel(params)
 
 		local DualTraceType = TraceType.withRealType(qs.dualnum)
 
+		local isDoingLARJAnnealing = larj.isInterpolationTrace(TraceType)
+
 		local veccopy = macro(function(dst, src)
 			return quote
 				var n = src:size()
@@ -97,10 +100,14 @@ local function HMCKernel(params)
 			gradient_scratch: S.Vector(qs.primfloat),
 			momenta: S.Vector(qs.primfloat),
 			invMasses: S.Vector(qs.primfloat)
-
-			-- TODO: Stuff for dealing with LARJ annealing(?)
 		}
 		mcmc.KernelPropStats(HMCKernel)
+
+		-- We need a couple of extra members if we're doing LARJ annealing
+		if isDoingLARJAnnealing then
+			HMCKernel.entries:insert({field="larjOldCompIndices", type=S.Vector(uint64)})
+			HMCKernel.entries:insert({field="larjNewCompIndices", type=S.Vector(uint64)})
+		end
 
 		terra HMCKernel:__doinit(stepSize: qs.primfloat, numSteps: uint64, doStepSizeAdapt: bool)
 			-- Will cause self.dualTrace to initialize, which is not strictly necessary, but it's
@@ -168,7 +175,7 @@ local function HMCKernel(params)
 				var numvars = [TraceType.countChoices({isStructural=false})](currTrace)
 				for i=0,numvars do
 					var rc = [TraceType.getChoice({isStructural=false})](currTrace, i)
-					rc:setUnboundedRealComps(&self.positions, &index)
+					index = index + rc:setUnboundedRealComps(&self.positions, index)
 				end
 				-- Turn factor/condition eval off, write to logprob/loglikelihood manually
 				-- (Saves unnecessary computation of evaluating expensive factors/conditions)
@@ -191,9 +198,12 @@ local function HMCKernel(params)
 				self.positions:clear()
 				var newn = 0U
 				var numvars = [TraceType.countChoices({isStructural=false})](currTrace)
+				var numCompsPerChoice = [S.Vector(uint64)].salloc():init()
 				for i=0,numvars do
 					var rc = [TraceType.getChoice({isStructural=false})](currTrace, i)
-					newn = newn + rc:getUnboundedRealComps(&self.positions)
+					var n = rc:getUnboundedRealComps(&self.positions)
+					newn = newn + n
+					numCompsPerChoice:insert(n)
 				end
 				if newn == 0 then
 					S.printf("Cannot use HMC on a program with no real-valued non-structural random choices.\n")
@@ -205,9 +215,38 @@ local function HMCKernel(params)
 					-- We need to rebuild our internal dual trace.
 					self.dualTrace:destruct()
 					[DualTraceType.copyFromRealType(qs.primfloat)](&self.dualTrace, currTrace)
-					-- We need to set up the inverse masses correctly.
+
+					-- We also need to re-size and re-initialize the inverse masses.
 					self.invMasses:clear(); self.invMasses:reserve(newn)
 					for i=0,newn do self.invMasses:insert(1.0) end
+
+					-- If we're doing LARJ, then we need to record which position variables are
+					--    annealing out / annealing in.
+					escape
+						if isDoingLARJAnnealing then
+							emit quote
+								self.larjOldCompIndices:clear()
+								self.larjNewCompIndices:clear()
+								var currCompIndex = 0
+								for i=0,numvars do
+									var n = numCompsPerChoice(i)
+									var rc = [TraceType.getChoice({isStructural=false})](currTrace, i)
+									if rc:isAnnealingOut() then
+										for j=0,n do
+											self.larjOldCompIndices:insert(currCompIndex+j)
+										end
+									elseif rc:isAnnealingIn() then
+										for j=0,n do
+											self.larjNewCompIndices:insert(currCompIndex+j)
+											-- Also initialize the inverse masses for annealing in variables to zero
+											self.invMasses(currCompIndex+j) = 0.0
+										end
+									end
+									currCompIndex = currCompIndex + n
+								end
+							end
+						end
+					end
 				end
 
 				-- Initialize the gradient
@@ -218,12 +257,32 @@ local function HMCKernel(params)
 					-- Search for a decent initial step size
 					self:searchForInitialStepSize()
 					-- Set up the adapter
-					self.adapter:init(self.stepSize, adaptRate)
+					self.adapter:reinit(self.stepSize, adaptRate)
 				end
 			end
 
-			-- Always do this, in case temperature has been changed
+			-- Always check for temperature changes
 			self.dualTrace:setTemperature(currTrace.temperature)
+
+			-- If we're doing LARJ, then we always need to update things according to the current interpolation
+			--    alpha (e.g. prevent variables that are annealing out from going crazy because they have little
+			--    effect on the log probability)
+			escape
+				if isDoingLARJAnnealing then
+					emit quote
+						self.dualTrace.alpha = currTrace.alpha
+						var oldScale = 1.0 - currTrace.alpha
+						var newScale = currTrace.alpha
+						for oldi in self.larjOldCompIndices do
+							self.invMasses(oldi) = oldScale
+						end
+						for newi in self.larjNewCompIndices do
+							self.invMasses(newi) = newScale
+						end
+					end
+				end
+			end
+
 		end
 
 		terra HMCKernel:sampleMomenta()
@@ -270,7 +329,7 @@ local function HMCKernel(params)
 			var numvars = [DualTraceType.countChoices({isStructural=false})](&self.dualTrace)
 			for i=0,numvars do
 				var rc = [DualTraceType.getChoice({isStructural=false})](&self.dualTrace, i)
-				rc:setStoredRealComps(&self.positions_dual_scratch, &index)
+				index = index + rc:setStoredRealComps(&self.positions_dual_scratch, index)
 			end
 			-- Update the trace
 			self.dualTrace:update(false)

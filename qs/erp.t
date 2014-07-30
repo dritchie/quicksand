@@ -372,25 +372,22 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 		local function genSetRealComps(self, val, comps, startindex, setter)
 			if ValueType == real then
 				return quote
-					setter(self, comps(@startindex))
-					@startindex = @startindex + 1
+					setter(self, comps(startindex))
 					self.needsRescore = true
 					return 1
 				end
 			elseif ValueType == S.Vector(real) then
 				return quote
 					for i=0,val:size() do
-						val(i) = comps(@startindex + i)
+						val(i) = comps(startindex + i)
 					end
-					@startindex = @startindex + val:size()
 					self.needsRescore = true
 					return val:size()
 				end
 			elseif ValueType:isstruct() and ValueType:getmethod("getRealComponents") then
 				return quote
-					var numset = val:setRealComponents(comps)
-					if numset > 0 then self.needsRescore = true end
-					return numset
+					self.needsRescore = true
+					return val:setRealComponents(comps)
 				end
 			else
 				return quote end
@@ -402,7 +399,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 			[genGetRealComps(self, val, comps)]
 		end
 
-		terra RandomChoiceT:setRealComps(comps: &S.Vector(real), index: &uint64)
+		terra RandomChoiceT:setRealComps(comps: &S.Vector(real), index: uint64)
 			var val = self:getValue()
 			[genSetRealComps(self, val, comps, index, RandomChoiceT.methods.setValue)]
 		end
@@ -412,7 +409,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 			[genGetRealComps(self, val, comps)]
 		end
 
-		terra RandomChoiceT:setStoredRealComps(comps: &S.Vector(real), index: &uint64)
+		terra RandomChoiceT:setStoredRealComps(comps: &S.Vector(real), index: uint64)
 			var val = self:getStoredValue()
 			[genSetRealComps(self, val, comps, index, RandomChoiceT.methods.setStoredValue)]
 		end
@@ -422,7 +419,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 			[genGetRealComps(self, val, comps)]
 		end
 
-		terra RandomChoiceT:setUnboundedRealComps(comps: &S.Vector(real), index: &uint64)
+		terra RandomChoiceT:setUnboundedRealComps(comps: &S.Vector(real), index: uint64)
 			var val = self:getUnboundedValue()
 			[genSetRealComps(self, val, comps, index, RandomChoiceT.methods.setUnboundedValue)]
 		end

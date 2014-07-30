@@ -1,6 +1,7 @@
 local util = terralib.require("qs.lib.util")
 local S = util.require("lib.std")
 local ad = util.require("lib.ad")
+local rand = util.require("lib.random")
 
 -- Globally-available stuff
 -- This will form the set of methods/types that get exported
@@ -22,6 +23,9 @@ qs.real = qs.primfloat
 -- Retrieves the value of a number, whether it's primitive or a dual number
 qs.val = ad.val
 
+-- Expose the function that seeds the random number generator
+-- TODO: Should this be here?
+qs.initrand = rand.initrand
 
 return qs
 

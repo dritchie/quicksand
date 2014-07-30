@@ -45,10 +45,13 @@ local RandomChoicePair = S.memoize(function(RCType)
 	end
 
 	-- Query whether this choice exists in each trace
-	terra RandomChoicePair:existsInTrace1() return self.exists1 end
-	terra RandomChoicePair:existsInTrace2() return self.exists2 end
-	RandomChoicePair.methods.existsInTrace1:setinlined(true)
-	RandomChoicePair.methods.existsInTrace2:setinlined(true)
+	terra RandomChoicePair:isAnnealingOut() return self.exists1 and not self.exists2 end
+	terra RandomChoicePair:isAnnealingIn() return self.exists2 and not self.exists1 end
+	RandomChoicePair.methods.isAnnealingOut:setinlined(true)
+	RandomChoicePair.methods.isAnnealingIn:setinlined(true)
+
+	terra RandomChoicePair:isStructural() return self.choice1:isStructural() end
+	RandomChoicePair.methods.isStructural:setinlined(true)
 
 	-- To do proposals, we have one of our random choices propose, and then we set the value
 	--    of the other one.
@@ -59,27 +62,33 @@ local RandomChoicePair = S.memoize(function(RCType)
 		end
 	end
 
-	-- Forward other method calls
+	-- Forward other method calls.
+	-- If the method name starts with "get", then forward only to choice1.
+	-- If the method name starts with "set", then forward to both choices.
 	local getForwardingMethod = S.memoize(function(methodname, ...)
 		local argtypes = terralib.newlist({...})
 		local argsyms = argtypes:map(function(t) return symbol(t) end)
-		-- We forward the method to choice1. If the return value has unit type, then
-		--    we also forward it to choice2. The idea is that for methods that return
-		--    something, we only need to fetch that something from one of the two
-		--    choices.
-		local maybeForwardToChoice2 = macro(function(self, choice1RetVal)
-			if choice1RetVal:gettype() == tuple() then
-				return quote
-					if self.choice2 ~= nil then
-						self.choice2:[methodname]([argsyms])
-					end
-				end
-			else return quote end end
-		end)
+		local function startswith(str, start)
+		   return string.sub(str, 1, string.len(start)) == start
+		end
 		return terra(self: &RandomChoicePair, [argsyms])
-			var ret = self.choice1:[methodname]([argsyms])
-			maybeForwardToChoice2(self, ret)
-			return ret
+			escape
+				if startswith(methodname, "get") then
+					emit quote
+						return self.choice1:[methodname]([argsyms])
+					end
+				elseif startswith(methodname, "set") then
+					emit quote
+						var ret = self.choice1:[methodname]([argsyms])
+						if self.choice2 ~= nil then
+							self.choice2:[methodname]([argsyms])
+						end
+						return ret
+					end
+				else
+					error(string.format("larj.RandomChoicePair - Attempt to forward unrecognized method '%s'", methodname))
+				end
+			end
 		end
 	end)
 	RandomChoicePair.metamethods.__methodmissing = macro(function(methodname, self, ...)
@@ -96,6 +105,11 @@ end)
 
 
 
+local function isInterpolationTrace(TraceType)
+	return rawget(TraceType, "__isLarjInterpTrace")
+end
+
+
 
 -- A trace that interpolates the log probabilities of two other traces
 local InterpTrace
@@ -107,6 +121,8 @@ local InterpolationTrace = S.memoize(function(RandExecTrace)
 		trace2: RandExecTrace,
 		alpha: qs.primfloat
 	}
+
+	InterpolationTrace.__isLarjInterpTrace = true
 
 	-- How to convert this type into the equivalent type with a different 'real' type
 	function InterpolationTrace.withRealType(real) return InterpTrace(RandExecTrace.withRealType(real)) end
@@ -132,6 +148,11 @@ local InterpolationTrace = S.memoize(function(RandExecTrace)
 				end
 			end
 		end
+	end
+
+	-- Some code requires a no-arg initializer for traces
+	terra InterpolationTrace:__init()
+		self:initmembers()
 	end
 
 	terra InterpolationTrace:__init(t1: &RandExecTrace, t2: &RandExecTrace)
@@ -428,6 +449,8 @@ end
 
 return
 {
+	InterpolationTrace = InterpolationTrace,
+	isInterpolationTrace = isInterpolationTrace,
 	exports = 
 	{
 		LARJKernel = LARJKernel
