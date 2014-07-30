@@ -85,6 +85,8 @@ local _numsamps = 150
 local _lag = 20
 local _runs = 5
 local _errtol = 0.07
+local LARJintervals = 20
+local HMCsteps = 10
 
 -- Check that a computed expected value is close enough to a known true value
 local function expectedValueTest(name, prog, trueExp, method, optparams)
@@ -527,7 +529,7 @@ end),
 qs.MCMC,
 {kernel = qs.MixtureKernel(
 	{
-		qs.LARJKernel({intervals=20}),
+		qs.LARJKernel({intervals=LARJintervals}),
 		qs.TraceMHKernel({doStruct=false})
 	},
 	{1.0/3.0, 2.0/3.0}
@@ -611,6 +613,80 @@ function()
 	local m = mod:openAs(p)
 end)
 
+
+-- HMC tests
+
+expectedValueTest(
+"gaussian expectation (Langevin)",
+qs.program(function()
+	return terra()
+		return qs.gaussian(0.1, 0.5, {struc=false})
+	end
+end), 0.1, qs.MCMC,
+{kernel=qs.HMCKernel()})
+
+expectedValueTest(
+"gaussian expectation (HMC)",
+qs.program(function()
+	return terra()
+		return qs.gaussian(0.1, 0.5, {struc=false})
+	end
+end), 0.1, qs.MCMC,
+{kernel=qs.HMCKernel({numSteps=HMCsteps})})
+
+expectedValueTest(
+"uniform expectation (Langevin)",
+qs.program(function()
+	return terra()
+		return qs.uniform(0.1, 0.4, {struc=false})
+	end
+end), 0.5*(.1+.4), qs.MCMC,
+{kernel=qs.HMCKernel()})
+
+expectedValueTest(
+"uniform expectation (HMC)",
+qs.program(function()
+	return terra()
+		return qs.uniform(0.1, 0.4, {struc=false})
+	end
+end), 0.5*(.1+.4), qs.MCMC,
+{kernel=qs.HMCKernel({numSteps=HMCsteps})})
+
+expectedValueTest(
+"gamma expectation (Langevin)",
+qs.program(function()
+	return terra()
+		return qs.gamma(2.0, 2.0, {struc=false})/10.0
+	end
+end), 0.4, qs.MCMC,
+{kernel=qs.HMCKernel()})
+
+expectedValueTest(
+"gamma expectation (HMC)",
+qs.program(function()
+	return terra()
+		return qs.gamma(2.0, 2.0, {struc=false})/10.0
+	end
+end), 0.4, qs.MCMC,
+{kernel=qs.HMCKernel({numSteps=HMCsteps})})
+
+expectedValueTest(
+"beta expectation (Langevin)",
+qs.program(function()
+	return terra()
+		return qs.beta(2.0, 5.0, {struc=false})
+	end
+end), 2.0/(2+5), qs.MCMC,
+{kernel=qs.HMCKernel()})
+
+expectedValueTest(
+"beta expectation (HMC)",
+qs.program(function()
+	return terra()
+		return qs.beta(2.0, 5.0, {struc=false})
+	end
+end), 2.0/(2+5), qs.MCMC,
+{kernel=qs.HMCKernel({numSteps=HMCsteps})})
 
 
 

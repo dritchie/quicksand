@@ -112,7 +112,7 @@ local Bounds =
 		return
 		{
 			forwardTransform = macro(function(x, lo)
-				return `tmath.exp(x) + lo
+				return `tmath.fmax(tmath.exp(x) + lo, lo+1e-15)
 			end),
 			inverseTransform = macro(function(y, lo)
 				local z = `tmath.fmax(y, lo + 1e-15)
@@ -129,7 +129,7 @@ local Bounds =
 		return
 		{
 			forwardTransform = macro(function(x, hi)
-				return `hi - tmath.exp(x)
+				return `tmath.fmin(hi - tmath.exp(x), hi-1e-15)
 			end),
 			inverseTransform = macro(function(y, hi)
 				local z = `tmath.fmin(y, hi - 1e-15)
@@ -246,17 +246,197 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 			return lst
 		end
 
-		-- Bounds only take effect if we're doing HMC with dual numbers
-		if real ~= qs.dualnum then bounding = Bounds.None end
+		-- Bounding transform functions
 		local getBoundingParams = bounding.getBoundingParams(real)
 		local function fwd(x, self)
-			return `bounding.forwardTransform(x, getBoundingParams([paramArgList(self)]))
+			return quote
+				var boundParams = getBoundingParams([paramArgList(self)])
+			in
+				bounding.forwardTransform(x, unpacktuple(boundParams))
+			end
 		end
 		local function inv(y, self)
-			return `bounding.inverseTransform(y, getBoundingParams([paramArgList(self)]))
+			return quote
+				var boundParams = getBoundingParams([paramArgList(self)])
+			in
+				bounding.inverseTransform(y, unpacktuple(boundParams))
+			end
 		end
 		local function lpincr(x, self)
-			return `bounding.logprobIncrement(x, getBoundingParams([paramArgList(self)]))
+			return quote
+				var boundParams = getBoundingParams([paramArgList(self)])
+			in
+				bounding.logprobIncrement(x, unpacktuple(boundParams))
+			end
+		end
+		-- Whether bounds are actually applied depends on whether we're doing HMC
+		-- TODO: Should we just always apply bounds? It means we pay a computational cost
+		--    when we use bounded variables with non-HMC kernels, but with the current
+		--    approach, we're paying the cost of transforming all variables when we copy
+		--    them from HMC dual traces back to normal traces...
+		local applyingBounds = (real == qs.dualnum)
+		-- local applyingBounds = true
+		
+
+
+
+		-- Get the value of this random choice
+		-- (A macro, because fwd may need to salloc() an object)
+		RandomChoiceT.methods.getValue = macro(function(self)
+			if applyingBounds then
+				return fwd(`self.value, self)
+			else
+				return `self.value
+			end
+		end)
+
+		-- Set the value of this random choice
+		terra RandomChoiceT:setValue(newval: ValueType)
+			S.rundestructor(self.value)
+			escape
+				if applyingBounds then
+					emit quote
+						newval = [inv(newval, self)]
+					end
+				end
+			end
+			S.copy(self.value, newval)
+			self.needsRescore = true
+		end
+		RandomChoiceT.methods.setValue:setinlined(true)
+
+		-- Get the unbounded (i.e. inverse-transformed) value of this random choice
+		-- (A macro, because inv may need to salloc() an object)
+		RandomChoiceT.methods.getUnboundedValue = macro(function(self)
+			if applyingBounds then
+				return `self.value
+			else
+				return inv(`self.value, self)
+			end
+		end)
+
+		-- Set the unbounded value of this random choice
+		terra RandomChoiceT:setUnboundedValue(newval: ValueType)
+			S.rundestructor(self.value)
+			escape
+				if not applyingBounds then
+					emit quote
+						newval = [fwd(newval, self)]
+					end
+				end
+			end
+			S.copy(self.value, newval)
+			self.needsRescore = true
+		end
+		RandomChoiceT.methods.setUnboundedValue:setinlined(true)
+
+		-- Get the raw, stored value of this random choice.
+		terra RandomChoiceT:getStoredValue()
+			return self.value
+		end
+		RandomChoiceT.methods.getStoredValue:setinlined(true)
+
+		-- Set the raw, stored value of this random choice.
+		terra RandomChoiceT:setStoredValue(newval: ValueType)
+			S.rundestructor(self.value)
+			S.copy(self.value, newval)
+			self.needsRescore = true
+		end
+		RandomChoiceT.methods.setStoredValue:setinlined(true)
+
+
+		-- === Now a bunch of methods like the above, except for extracting
+		-- ===    all real-valued components of the choice's value.
+		-- === This is mostly for dealing with vector-valued variables.
+
+		local function genGetRealComps(self, val, comps)
+			if ValueType == real then
+				return quote
+					comps:insert(val)
+					return 1
+				end
+			elseif ValueType == S.Vector(real) then
+				return quote
+					for x in val do comps:insert(x) end
+					return val:size()
+				end
+			elseif ValueType:isstruct() and ValueType:getmethod("getRealComponents") then
+				return quote
+					return val:getRealComponents(comps)
+				end
+			else
+				return quote end
+			end
+		end
+
+		local function genSetRealComps(self, val, comps, startindex, setter)
+			if ValueType == real then
+				return quote
+					setter(self, comps(@startindex))
+					@startindex = @startindex + 1
+					self.needsRescore = true
+					return 1
+				end
+			elseif ValueType == S.Vector(real) then
+				return quote
+					for i=0,val:size() do
+						val(i) = comps(@startindex + i)
+					end
+					@startindex = @startindex + val:size()
+					self.needsRescore = true
+					return val:size()
+				end
+			elseif ValueType:isstruct() and ValueType:getmethod("getRealComponents") then
+				return quote
+					var numset = val:setRealComponents(comps)
+					if numset > 0 then self.needsRescore = true end
+					return numset
+				end
+			else
+				return quote end
+			end
+		end
+
+		terra RandomChoiceT:getRealComps(comps: &S.Vector(real))
+			var val = self:getValue()
+			[genGetRealComps(self, val, comps)]
+		end
+
+		terra RandomChoiceT:setRealComps(comps: &S.Vector(real), index: &uint64)
+			var val = self:getValue()
+			[genSetRealComps(self, val, comps, index, RandomChoiceT.methods.setValue)]
+		end
+
+		terra RandomChoiceT:getStoredRealComps(comps: &S.Vector(real))
+			var val = self:getStoredValue()
+			[genGetRealComps(self, val, comps)]
+		end
+
+		terra RandomChoiceT:setStoredRealComps(comps: &S.Vector(real), index: &uint64)
+			var val = self:getStoredValue()
+			[genSetRealComps(self, val, comps, index, RandomChoiceT.methods.setStoredValue)]
+		end
+
+		terra RandomChoiceT:getUnboundedRealComps(comps: &S.Vector(real))
+			var val = self:getUnboundedValue()
+			[genGetRealComps(self, val, comps)]
+		end
+
+		terra RandomChoiceT:setUnboundedRealComps(comps: &S.Vector(real), index: &uint64)
+			var val = self:getUnboundedValue()
+			[genSetRealComps(self, val, comps, index, RandomChoiceT.methods.setUnboundedValue)]
+		end
+
+
+		-- To be 100% correct, we also make sure that stored values are transformed correctly
+		--    when we do copyFromRealType. This doesn't affect HMC, since it always copies values
+		--    into the trace before re-running it, but who knows if it might pop up as a problem
+		--    later on down the line...
+		function RandomChoiceT.__copyFromRealType(realType)
+			return terra(self: &RandomChoiceT, other: &RandomChoiceT.withRealType(realType))
+				[RandomChoiceT.copyMembersFromRealType(realType)](self, other)
+				self:setValue(other:getValue())
+			end
 		end
 
 
@@ -269,7 +449,14 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 					emit quote ptrSafeCopy(self.[paramField(i)], [paramSyms[i]]) end
 				end
 			end
-			ptrSafeCopy(self.value, [inv(initValSym, self)])
+			var val = [util.isPOD(ValueType) and initValSym or (`@initValSym)]
+			escape
+				if applyingBounds then
+					emit quote S.copy(self.value, [inv(val, self)]) end
+				else
+					emit quote S.copy(self.value, val) end
+				end
+			end
 			self:rescore()
 			self.active = true
 		end
@@ -336,104 +523,30 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 				else
 					emit `val
 				end
-			end, [paramArgList(self)]) + [lpincr(`self.value, self)]
+			end, [paramArgList(self)])
+			escape
+				if applyingBounds then
+					emit quote self.logprob = self.logprob + [lpincr(`self:getStoredValue(), self)] end
+				end
+			end
 			self.needsRescore = false
 		end
 
 		-- Propose new value, return fwd/rvs proposal probabilities
 		terra RandomChoiceT:proposal() : {real, real}
+			var newval : ValueType
 			var fwdlp : real
 			var rvslp : real
 			var currval = self:getValue()
-			self.value, fwdlp, rvslp = propose(escape
+			newval, fwdlp, rvslp = propose(escape
 				if propose:gettype().parameters[1] == &ValueType then
 					emit `&currval
 				else
 					emit `currval
 				end
 			end, [paramArgList(self)])
-			S.rundestructor(currval)
-			self.value = [inv(`self.value, self)]
-			self.needsRescore = true
+			self:setValue(newval)
 			return fwdlp, rvslp
-		end
-
-		-- Get the (transformed) stored value of this random choice
-		-- (A macro, because fwd may need to salloc() an object)
-		RandomChoiceT.methods.getValue = macro(function(self)
-			return fwd(`self.value, self)
-		end)
-
-		-- Get the raw, untransformed stored value of this random choice.
-		terra RandomChoiceT:getUntransformedValue()
-			return self.value
-		end
-		RandomChoiceT.methods.getUntransformedValue:setinlined(true)
-
-		-- Set the raw, untransformed stored value of this random choice.
-		terra RandomChoiceT:setUntransformedValue(newval: ValueType)
-			S.rundestructor(self.value)
-			S.copy(self.value, newval)
-			self.needsRescore = true
-		end
-		RandomChoiceT.methods.setUntransformedValue:setinlined(true)
-
-		-- Get the raw, untransformed values of all real components of the value
-		--    of this random choice
-		-- Returns the number of components gotten
-		terra RandomChoiceT:getUntransformedRealComps(comps: &S.Vector(real))
-			escape
-				if ValueType == real then
-					emit quote
-						comps:insert(self.value)
-						return 1
-					end
-				elseif ValueType == S.Vector(real) then
-					emit quote
-						for x in self.value do comps:insert(x) end
-						return self.value:size()
-					end
-				elseif ValueType:isstruct() and ValueType:getmethod("getRealComponents") then
-					emit quote
-						return self.value:getRealComponents(comps)
-					end
-				else
-					emit quote end
-				end
-			end
-		end
-
-		-- Set the raw, untransformed values of all real components of the value
-		--    of this random choice
-		-- Returns the number of components set
-		terra RandomChoiceT:setUntransformedRealComps(comps: &S.Vector(real), startindex: &uint64)
-			escape
-				if ValueType == real then
-					emit quote
-						self.value = comps(@startindex)
-						@startindex = @startindex + 1
-						self.needsRescore = true
-						return 1
-					end
-				elseif ValueType == S.Vector(real) then
-					emit quote
-						for i=0,self.value:size() do
-							self.value(i) = comps(@startindex + i)
-						end
-						@startindex = @startindex + self.value:size()
-						self.needsRescore = true
-						return self.value:size()
-					end
-				elseif ValueType:isstruct() and ValueType:getmethod("getRealComponents") then
-					emit quote
-						var numset = self.value:setRealComponents(comps)
-						if numset > 0 then self.needsRescore = true end
-						return numset
-					end
-				else
-					emit quote end
-				end
-			end
 		end
 
 		return RandomChoiceT

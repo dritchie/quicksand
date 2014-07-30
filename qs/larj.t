@@ -55,7 +55,7 @@ local RandomChoicePair = S.memoize(function(RCType)
 	terra RandomChoicePair:proposal() : {real, real}
 		var fwdlp, rvslp = self.choice1:proposal()
 		if self.choice2 ~= nil then
-			self.choice2:setUntransformedValue(self.choice1:getUntransformedValue())
+			self.choice2:setStoredValue(self.choice1:getStoredValue())
 		end
 	end
 

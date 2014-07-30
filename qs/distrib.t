@@ -115,6 +115,7 @@ D.gamma = S.memoize(function(real)
 	return {
 		sample = sample,
 		logprob = terra(x: real, shape: real, scale: real) : real
+			if x <= 0.0 then return [-math.huge] end
 			return (shape - 1.0)*tmath.log(x) - x/scale - [log_gamma(real)](shape) - shape*tmath.log(scale)
 		end
 	}

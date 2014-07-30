@@ -168,11 +168,10 @@ local function HMCKernel(params)
 				var numvars = [TraceType.countChoices({isStructural=false})](currTrace)
 				for i=0,numvars do
 					var rc = [TraceType.getChoice({isStructural=false})](currTrace, i)
-					rc:setUntransformedRealComps(&self.positions, &index)
+					rc:setUnboundedRealComps(&self.positions, &index)
 				end
 				-- Turn factor/condition eval off, write to logprob/loglikelihood manually
 				-- (Saves unnecessary computation of evaluating expensive factors/conditions)
-				-- currTrace:update(false)
 				currTrace:update(false, false)
 				currTrace:copyProbabilities(self.dualTrace)
 			end
@@ -194,7 +193,7 @@ local function HMCKernel(params)
 				var numvars = [TraceType.countChoices({isStructural=false})](currTrace)
 				for i=0,numvars do
 					var rc = [TraceType.getChoice({isStructural=false})](currTrace, i)
-					newn = newn + rc:getUntransformedRealComps(&self.positions)
+					newn = newn + rc:getUnboundedRealComps(&self.positions)
 				end
 				if newn == 0 then
 					S.printf("Cannot use HMC on a program with no real-valued non-structural random choices.\n")
@@ -271,7 +270,7 @@ local function HMCKernel(params)
 			var numvars = [DualTraceType.countChoices({isStructural=false})](&self.dualTrace)
 			for i=0,numvars do
 				var rc = [DualTraceType.getChoice({isStructural=false})](&self.dualTrace, i)
-				rc:setUntransformedRealComps(&self.positions_dual_scratch, &index)
+				rc:setStoredRealComps(&self.positions_dual_scratch, &index)
 			end
 			-- Update the trace
 			self.dualTrace:update(false)
