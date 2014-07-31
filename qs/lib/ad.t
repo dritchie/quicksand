@@ -86,6 +86,7 @@ local struct num
 {
 	impl: &DualNumBase
 }
+function num.metamethods.__typename() return "dualnum" end
 
 terra num:val()
 	return self.impl.val
@@ -97,7 +98,7 @@ terra num:adj()
 end
 num.methods.adj:setinlined(true)
 
-num.metamethods.__cast = function(from, to, exp)
+function num.metamethods.__cast(from, to, exp)
 	if from:isfloat() and to == num then
 		return `num { DualNumBase.new(exp, nil) }
 	else

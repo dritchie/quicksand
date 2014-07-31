@@ -353,7 +353,7 @@ end)
 D.dirichlet_vector = S.memoize(function(real)
 	return {
 		-- NOTE: It is up to the caller to manage the memory of the
-		--    returned vectoD.
+		--    returned vector.
 		sample = terra(params: &S.Vector(real)) : S.Vector(real)
 			var out : S.Vector(real)
 			out:init(params:size())

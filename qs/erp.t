@@ -86,17 +86,47 @@ local function getStructuralOption(s)
 	end
 end
 
-
-
-
 -- Defining bounding behavior for continuous random choices
+-- FYI: My notion of forward/inverse is flipped from what's in the Stan manual
 local logistic = macro(function(x)
 	return `1.0 / (1.0 + tmath.exp(-x))
 end)
 local invlogistic = macro(function(y)
 	return `-tmath.log(1.0/y - 1.0)
 end)
-local Bounds =
+local makeArrayLikeFrom = macro(function(origThing)
+	local T = origThing:gettype()
+	if T:isarray() then
+		local nums = terralib.newlist()
+		for i=1,T.N do nums:insert(`[T.type](0.0)) end
+		return `arrayof([T.type], [nums])
+	else
+		return quote
+			var thing = T.salloc():init(origThing:size())
+			thing._size = origThing:size()
+		in
+			@thing
+		end
+	end
+end)
+local length = macro(function(thing)
+	local T = thing:gettype()
+	if T:isarray() then
+		return `[T.N]
+	else
+		return `thing:size()
+	end
+end)
+local get = macro(function(thing, i)
+	local T = thing:gettype()
+	if T:isarray() then
+		return `thing[i]
+	else
+		return `thing(i)
+	end
+end)
+local Bounds
+Bounds =
 {
 	None = 
 	{
@@ -165,9 +195,63 @@ local Bounds =
 			end),
 			getBoundingParams = getBoundsFn
 		}
-	end
+	end,
 
-	-- TODO: Simplex bounds (for dirichlet)
+	UnitSimplex =
+	{
+		forwardTransform = macro(function(x)
+			local real = x:gettype().type
+			return quote
+				var y = makeArrayLikeFrom(x)
+				var Km1 = length(x)-1
+				var sticklen = real(1.0)
+				for k=0,Km1 do
+					var z = logistic(get(x,k) - tmath.log(Km1 - k))
+					get(y,k) = sticklen*z
+					sticklen = sticklen - get(y,k)
+				end
+				get(y,Km1) = sticklen
+			in
+				y
+			end
+		end),
+		inverseTransform = macro(function(y)
+			return quote
+				var x = makeArrayLikeFrom(y)
+				var Km1 = length(y)-1
+				var sticklen = get(y,Km1)
+				var sum = get(y,0)
+				for i=1,Km1+1 do sum = sum + get(y,i) end
+				for k=Km1-1,-1,-1 do
+					sticklen = sticklen + get(y,k)
+					var z = get(y,k) / sticklen
+					get(x,k) = invlogistic(z) + tmath.log(Km1 - k)
+				end
+			in
+				x
+			end
+		end),
+		logprobIncrement = macro(function(x)
+			local real = x:gettype().type
+			return quote
+				var lp = real(0.0)
+				var Km1 = length(x)-1
+				var sticklen = real(1.0)
+				for k=0,Km1 do
+					var z = logistic(get(x,k) - tmath.log(Km1 - k))
+				  	lp = lp + tmath.log(sticklen)
+				  	lp = lp + tmath.log(z)
+				  	lp = lp + tmath.log(1.0 - z)
+					sticklen = sticklen - (sticklen*z)
+				end
+			in
+				lp
+			end
+		end),
+		getBoundingParams = S.memoize(function(real)
+			return macro(function(...) return quote end end)
+		end)
+	}
 }
 
 
@@ -269,11 +353,11 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 				bounding.logprobIncrement(x, unpacktuple(boundParams))
 			end
 		end
-		-- Whether bounds are actually applied depends on whether we're doing HMC
+		-- Whether bounds are actually applied depends on whether we're doing AD
 		-- TODO: Should we just always apply bounds? It means we pay a computational cost
 		--    when we use bounded variables with non-HMC kernels, but with the current
 		--    approach, we're paying the cost of transforming all variables when we copy
-		--    them from HMC dual traces back to normal traces...
+		--    them between normal traces and HMC dual traces...
 		local applyingBounds = (real == qs.dualnum)
 		-- local applyingBounds = true
 		
@@ -355,6 +439,11 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 					comps:insert(val)
 					return 1
 				end
+			elseif ValueType:isarray() and ValueType.type == real then
+				return quote
+					for i=0,[ValueType.N] do comps:insert(val[i]) end
+					return [ValueType.N]
+				end
 			elseif ValueType == S.Vector(real) then
 				return quote
 					for x in val do comps:insert(x) end
@@ -369,25 +458,40 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 			end
 		end
 
-		local function genSetRealComps(self, val, comps, startindex, setter)
+		local function genSetRealComps(self, comps, startindex, setter)
 			if ValueType == real then
 				return quote
 					setter(self, comps(startindex))
 					self.needsRescore = true
 					return 1
 				end
+			elseif ValueType:isarray() and ValueType.type == real then
+				return quote
+					var val : ValueType
+					for i=0,[ValueType.N] do
+						val[i] = comps(startindex + i)
+					end
+					setter(self, val)
+					self.needsRescore = true
+					return [ValueType.N]
+				end
 			elseif ValueType == S.Vector(real) then
 				return quote
-					for i=0,val:size() do
+					var val = ValueType.salloc():copy(&self.value)
+					for i=0,self.value:size() do
 						val(i) = comps(startindex + i)
 					end
+					setter(self, @val)
 					self.needsRescore = true
 					return val:size()
 				end
 			elseif ValueType:isstruct() and ValueType:getmethod("getRealComponents") then
 				return quote
+					var val = ValueType.salloc():copy(&self.value)
+					var numset = val:setRealComponents(comps)
+					seter(self, @val)
 					self.needsRescore = true
-					return val:setRealComponents(comps)
+					return numset
 				end
 			else
 				return quote end
@@ -400,8 +504,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 		end
 
 		terra RandomChoiceT:setRealComps(comps: &S.Vector(real), index: uint64)
-			var val = self:getValue()
-			[genSetRealComps(self, val, comps, index, RandomChoiceT.methods.setValue)]
+			[genSetRealComps(self, comps, index, RandomChoiceT.methods.setValue)]
 		end
 
 		terra RandomChoiceT:getStoredRealComps(comps: &S.Vector(real))
@@ -410,8 +513,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 		end
 
 		terra RandomChoiceT:setStoredRealComps(comps: &S.Vector(real), index: uint64)
-			var val = self:getStoredValue()
-			[genSetRealComps(self, val, comps, index, RandomChoiceT.methods.setStoredValue)]
+			[genSetRealComps(self, comps, index, RandomChoiceT.methods.setStoredValue)]
 		end
 
 		terra RandomChoiceT:getUnboundedRealComps(comps: &S.Vector(real))
@@ -420,19 +522,20 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 		end
 
 		terra RandomChoiceT:setUnboundedRealComps(comps: &S.Vector(real), index: uint64)
-			var val = self:getUnboundedValue()
-			[genSetRealComps(self, val, comps, index, RandomChoiceT.methods.setUnboundedValue)]
+			[genSetRealComps(self, comps, index, RandomChoiceT.methods.setUnboundedValue)]
 		end
 
 
 		-- To be 100% correct, we also make sure that stored values are transformed correctly
-		--    when we do copyFromRealType. This doesn't affect HMC, since it always copies values
-		--    into the trace before re-running it, but who knows if it might pop up as a problem
-		--    later on down the line...
+		--    when we do copyFromRealType.
 		function RandomChoiceT.__copyFromRealType(realType)
 			return terra(self: &RandomChoiceT, other: &RandomChoiceT.withRealType(realType))
 				[RandomChoiceT.copyMembersFromRealType(realType)](self, other)
-				self:setValue(other:getValue())
+				var otherval = other:getValue()
+				var myval : ValueType
+				[trace.copyFromRealType(real)](myval, otherval)
+				self:setValue(myval)
+				S.rundestructor(myval)
 			end
 		end
 
@@ -523,7 +626,9 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 			end, [paramArgList(self)])
 			escape
 				if applyingBounds then
-					emit quote self.logprob = self.logprob + [lpincr(`self:getStoredValue(), self)] end
+					emit quote
+						self.logprob = self.logprob + [lpincr(`self:getStoredValue(), self)]
+					end
 				end
 			end
 			self.needsRescore = false

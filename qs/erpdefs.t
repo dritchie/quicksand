@@ -167,10 +167,16 @@ end)
 -- dirichlet is set up just like multinomial
 
 local dirichlet_array = S.memoize(function(N)
-	return erp.makeRandomChoice(distrib.dirichlet_array(N))
+	return erp.makeRandomChoice(
+		distrib.dirichlet_array(N),
+		nil,
+		erp.Bounds.UnitSimplex
+	)
 end)
 local dirichlet_vector = erp.makeRandomChoice(
-	distrib.dirichlet_vector
+	distrib.dirichlet_vector,
+	nil,
+	erp.Bounds.UnitSimplex
 )
 
 ERPs.dirichlet = macro(function(params, opts)

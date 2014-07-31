@@ -98,6 +98,10 @@ function copyFromRealType(real)
 					[copyFromRealType(real)]((@pa)[i], other[i])
 				end
 			end
+		elseif T:isarray() then
+			local elems = terralib.newlist()
+			for i=1,T.N do elems:insert(`[T.type](other[i-1])) end
+			return quote self = arrayof([T.type], [elems]) end
 		-- I thought it better to just handle vectors here as a special case
 		elseif rawget(T, "isstdvector") then
 			return quote

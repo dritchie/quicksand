@@ -690,6 +690,32 @@ qs.program(function()
 end), 2.0/(2+5), qs.MCMC,
 {kernel=qs.HMCKernel({numSteps=HMCsteps})})
 
+compileAndRunTest(
+"dirichlet array compile and run (HMC)",
+function() return
+qs.infer(
+qs.program(function()
+	return terra()
+		return qs.dirichlet(arrayof(qs.real, 1.0, 1.0, 1.0, 1.0), {struc=false})
+	end
+end),
+qs.Samples, qs.MCMC(qs.HMCKernel(), {numsamps=_numsamps}))() end)
+
+compileAndRunTest(
+"dirichlet vector compile and run (HMC)",
+function() return
+qs.infer(
+qs.program(function()
+	return terra()
+		var p = [S.Vector(qs.real)].salloc():init()
+		p:insert(1.0); p:insert(1.0); p:insert(1.0); p:insert(1.0)
+		var d : S.Vector(qs.real)
+		d:copy(qs.dirichlet(p, {struc=false}))
+		return d
+	end
+end),
+qs.Samples, qs.MCMC(qs.HMCKernel(), {numsamps=_numsamps}))() end)
+
 expectedValueTest(
 "hmc multiple variables expectation",
 qs.program(function()
