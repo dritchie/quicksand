@@ -488,7 +488,7 @@ Returns a normalized histogram of program return values. This only makes sense f
 
 # More Examples
 
-You can find more examples of probabilistic programs over at the [Forest respository](http://forestdb.org/) for generative models. Most of these programs are written in Church (a LISP-based probabilistic programming language), but nearly all of the same principles apply. The online [Probabilistic Mdoels of Cognition](https://probmods.org/) course is also a great source for more examples and explanation.
+You can find more examples of probabilistic programs over at the [Forest respository](http://forestdb.org/) for generative models. Most of these programs are written in Church (a LISP-based probabilistic programming language), but nearly all of the same principles apply. The online [Probabilistic Models of Cognition](https://probmods.org/) course is also a great source for more examples and explanation.
 
 
 # Acknowledgments
