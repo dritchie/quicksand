@@ -493,5 +493,5 @@ You can find more examples of probabilistic programs over at the [Forest resposi
 
 # Acknowledgments
 
-*Coming soon...*
+Quicksand is being developed as part of the [DARPA Probabilistic Programming for Advanced Machine Learning (PPAML)](http://www.darpa.mil/Our_Work/I2O/Programs/Probabilistic_Programming_for_Advanced_Machine_Learning_(PPAML).aspx) program. This material is based on research sponsored by DARPA under agreement number FA8750-14-2-0009. The U.S. Government is authorized to reproduce and distribute reprints for Governmental purposes notwithstanding any copyright notation thereon. The views and conclusions contained herein are those of the authors and should not be interpreted as necessarily representing the official policies or endorsements, either expressed or implied, of DARPA or the U.S. Government.
 
