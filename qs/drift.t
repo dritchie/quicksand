@@ -35,7 +35,8 @@ local function DriftKernel(params)
 		
 		local struct DriftKernel(S.Object)
 		{
-			scale: qs.float,
+			initScale: qs.float,
+			scales: S.Vector(qs.float),
 			adapting: bool,
 
 			realcomps: S.Vector(qs.float),
@@ -49,7 +50,7 @@ local function DriftKernel(params)
 		terra DriftKernel:__doinit(scale: qs.float, doAdapt: bool)
 			self:initmembers()
 
-			self.scale = scale
+			self.initScale = scale
 			self.adapting = doAdapt
 
 			self.lastTraceSeen = nil
@@ -70,7 +71,7 @@ local function DriftKernel(params)
 			var n = self.realcomps:size()
 			-- For each component, sample a gaussian perturbation
 			for i=0,n do
-				self.realcomps_scratch(i) = [distrib.gaussian(qs.float)].sample(self.realcomps(i), self.scale)
+				self.realcomps_scratch(i) = [distrib.gaussian(qs.float)].sample(self.realcomps(i), self.scales(i))
 			end
 
 			-- Create a scratch trace, copy these components back into it, and update.
@@ -82,7 +83,7 @@ local function DriftKernel(params)
 				index = index + rc:setUnboundedRealComps(&self.realcomps_scratch, index)
 			end
 			nextTrace:update(false)
-			
+
 			-- Accept/reject
 			var targetAcceptRatio = 0.234
 			if n < 5 then targetAcceptRatio = lerp(0.44, 0.234, (n-1)/4.0) end
@@ -111,6 +112,13 @@ local function DriftKernel(params)
 				var n = self.realcomps:size()
 				self.realcomps_scratch:clear()
 				for i=0,n do self.realcomps_scratch:insert() end
+				-- Also may need to expand scales vector
+				-- (Note that scales never shrinks, it only expands. This way when we go from a big
+				--     structure to a small one and back again, we don't throw away any adaptation)
+				var scalesSize = self.scales:size()
+				for i=scalesSize,n do
+					self.scales:insert(self.initScale)
+				end
 			end
 		end
 
