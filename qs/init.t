@@ -26,7 +26,8 @@ addExports(
 	"mcmc",
 	"larj",
 	"hmc",
-	"harm"
+	"harm",
+	"drift"
 )
 
 

@@ -786,6 +786,98 @@ qs.program(function()
 end), 0.1, qs.MCMC,
 {kernel=qs.HARMKernel()})
 
+expectedValueTest(
+"harm structure change expectation",
+qs.program(function()
+	return terra()
+		var n = 2
+		if qs.flip(0.5) then n = 5 end
+		var sum = qs.real(0.0)
+		for i=0,n do 
+			sum = sum + qs.gaussian(0.1, 0.5, {struc=false})
+		end
+		return sum/n
+	end
+end), 0.1, qs.MCMC,
+{kernel = qs.MixtureKernel(
+	{
+		qs.TraceMHKernel({doNonstruct=false}),
+		qs.HARMKernel()
+	},
+	{0.1, 0.9}
+)})
+
+
+-- Drift tests
+expectedValueTest(
+"drift expectation",
+qs.program(function()
+	return terra()
+		var sum = qs.real(0.0)
+		for i=0,10 do
+			sum = sum + qs.gaussian(0.1, 0.5, {struc=false})
+		end
+		return sum/10.0
+	end
+end), 0.1, qs.MCMC,
+{kernel=qs.DriftKernel()})
+
+expectedValueTest(
+"drift structure change expectation",
+qs.program(function()
+	return terra()
+		var n = 2
+		if qs.flip(0.5) then n = 5 end
+		var sum = qs.real(0.0)
+		for i=0,n do 
+			sum = sum + qs.gaussian(0.1, 0.5, {struc=false})
+		end
+		return sum/n
+	end
+end), 0.1, qs.MCMC,
+{kernel = qs.MixtureKernel(
+	{
+		qs.TraceMHKernel({doNonstruct=false}),
+		qs.DriftKernel()
+	},
+	{0.1, 0.9}
+)})
+
+expectedValueTest(
+"drift expectation (lexical scale sharing)",
+qs.program(function()
+	return terra()
+		var sum = qs.real(0.0)
+		for i=0,10 do
+			sum = sum + qs.gaussian(0.1, 0.5, {struc=false})
+		end
+		return sum/10.0
+	end
+end), 0.1, qs.MCMC,
+{kernel=qs.DriftKernel({lexicalScaleSharing=true})})
+
+expectedValueTest(
+"drift structure change expectation (lexical scale sharing)",
+qs.program(function()
+	return terra()
+		var n = 2
+		if qs.flip(0.5) then n = 5 end
+		var sum = qs.real(0.0)
+		for i=0,n do 
+			sum = sum + qs.gaussian(0.1, 0.5, {struc=false})
+		end
+		return sum/n
+	end
+end), 0.1, qs.MCMC,
+{kernel = qs.MixtureKernel(
+	{
+		qs.TraceMHKernel({doNonstruct=false}),
+		qs.DriftKernel({lexicalScaleSharing=true})
+	},
+	{0.1, 0.9}
+)})
+
+
 
 
 
