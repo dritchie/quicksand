@@ -44,7 +44,7 @@ local function MCMC(kernel, params)
 
 	return function(program)
 		progmod.assertIsProgram(program, "MCMC")
-		local TraceType = trace.RandExecTrace(program, qs.primfloat)
+		local TraceType = trace.RandExecTrace(program, qs.float)
 		local KernelType = kernel(TraceType)
 
 		local terra doMCMC(samples: &S.Vector(infer.SampleType(program)),
@@ -197,7 +197,7 @@ local function MixtureKernel(kernels, weights)
 		
 		local struct MixtureKernel(S.Object)
 		{
-			weights: qs.primfloat[ #weights ]
+			weights: qs.float[ #weights ]
 		}
 		-- Insert an entry for every sub-kernel
 		local function kernelEntry(i) return string.format("kernel%d", i-1) end
@@ -205,7 +205,7 @@ local function MixtureKernel(kernels, weights)
 			MixtureKernel.entries:insert({field=kernelEntry(i), type=k})
 		end
 
-		local weightsyms = weights:map(function(w) return symbol(qs.primfloat) end)
+		local weightsyms = weights:map(function(w) return symbol(qs.float) end)
 		terra MixtureKernel:__doinit([weightsyms])
 			self:initmembers()
 			escape
@@ -264,7 +264,7 @@ local function MixtureKernel(kernels, weights)
 		end
 
 		terra MixtureKernel:next(currTrace: &TraceType, iter: uint, numiters: uint)
-			var randindex = [distrib.multinomial_array(#weights)(qs.primfloat)].sample(self.weights)
+			var randindex = [distrib.multinomial_array(#weights)(qs.float)].sample(self.weights)
 			escape
 				for i,k in ipairs(skernels) do
 					emit quote
@@ -284,7 +284,7 @@ end
 
 -- Run the simulated annealing meta-inference algorithm on top of another MCMC kernel
 -- 'annealSched' can be any Terra function or macro that takes in two ints (curr iteration
---     + total number of iterations) and returns a qs.primfloat
+--     + total number of iterations) and returns a qs.float
 local function AnnealingKernel(kernel, annealSched)
 	return function(TraceType)
 		local skernel = kernel(TraceType)

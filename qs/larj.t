@@ -119,7 +119,7 @@ local InterpolationTrace = S.memoize(function(RandExecTrace)
 	{
 		trace1: RandExecTrace,
 		trace2: RandExecTrace,
-		alpha: qs.primfloat
+		alpha: qs.float
 	}
 
 	InterpolationTrace.__isLarjInterpTrace = true

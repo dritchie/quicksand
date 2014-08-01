@@ -219,7 +219,7 @@ multiMethodExpectedValueTest(
 qs.program(function()
 	return terra()
 		var items = array(0.2, 0.3, 0.4)
-		var params = [S.Vector(qs.primfloat)].salloc():init()
+		var params = [S.Vector(qs.real)].salloc():init()
 		params:insert(0.2); params:insert(0.6); params:insert(0.2)
 		return items[qs.multinomial(params, {struc=false})]
 	end
@@ -282,9 +282,9 @@ function() return qs.infer(dirichletArrayProg, qs.Samples, qs.MCMC(qs.TraceMHKer
 
 local dirichletVectorProg = qs.program(function()
 	return terra()
-		var p = [S.Vector(qs.primfloat)].salloc():init()
+		var p = [S.Vector(qs.real)].salloc():init()
 		p:insert(1.0); p:insert(1.0); p:insert(1.0); p:insert(1.0)
-		var d : S.Vector(qs.primfloat)
+		var d : S.Vector(qs.real)
 		d:copy(qs.dirichlet(p, {struc=false}))
 		return d
 	end

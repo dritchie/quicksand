@@ -2,8 +2,6 @@ local util = terralib.require("qs.lib.util")
 
 local S = util.require("lib.std")
 local qs = util.require("globals")
-local progmod = util.require("progmodule")
-local trace = util.require("trace")
 local mcmc = util.require("mcmc")
 local distrib = util.require("distrib")
 local tmath = util.require("lib.tmath")
@@ -15,15 +13,15 @@ local larj = util.require("larj")
 -- Adapted from Stan
 local struct DualAverage(S.Object)
 {
-	gbar: qs.primfloat,
-	xbar: qs.primfloat,
-	x0: qs.primfloat,
-	lastx: qs.primfloat,
+	gbar: qs.float,
+	xbar: qs.float,
+	x0: qs.float,
+	lastx: qs.float,
 	k: uint,
-	gamma: qs.primfloat
+	gamma: qs.float
 }
 
-terra DualAverage:reinit(x0: qs.primfloat, gamma: qs.primfloat)
+terra DualAverage:reinit(x0: qs.float, gamma: qs.float)
 	self.k = 0
 	self.x0 = x0
 	self.lastx = x0
@@ -37,11 +35,11 @@ terra DualAverage:__init()
 	self:reinit(0.0, 0.0)
 end
 
-terra DualAverage:update(g: qs.primfloat)
+terra DualAverage:update(g: qs.float)
 	self.k = self.k + 1
 	var avgeta = 1.0 / (self.k + 10)
-	var xbar_avgeta = tmath.pow(qs.primfloat(self.k), -0.75)
-	var muk = 0.5 * tmath.sqrt(qs.primfloat(self.k)) / self.gamma
+	var xbar_avgeta = tmath.pow(qs.float(self.k), -0.75)
+	var muk = 0.5 * tmath.sqrt(qs.float(self.k)) / self.gamma
 	self.gbar = avgeta*g + (1-avgeta)*self.gbar
 	self.lastx = self.x0 - muk*self.gbar
 	var oldxbar = self.xbar
@@ -83,23 +81,23 @@ local function HMCKernel(params)
 		
 		local struct HMCKernel(S.Object)
 		{
-			stepSize: qs.primfloat,
+			stepSize: qs.float,
 			numSteps: uint64,
 			adapting: bool,
 			adapter: DualAverage,
-			targetAcceptRate: qs.primfloat,
+			targetAcceptRate: qs.float,
 
 			dualTrace: DualTraceType,
 			lastTraceSeen: &TraceType,
 			lastNumUpdatesSeen: int64,
 
-			positions: S.Vector(qs.primfloat),
-			positions_scratch: S.Vector(qs.primfloat),
+			positions: S.Vector(qs.float),
+			positions_scratch: S.Vector(qs.float),
 			positions_dual_scratch: S.Vector(qs.dualnum),
-			gradient: S.Vector(qs.primfloat),
-			gradient_scratch: S.Vector(qs.primfloat),
-			momenta: S.Vector(qs.primfloat),
-			invMasses: S.Vector(qs.primfloat)
+			gradient: S.Vector(qs.float),
+			gradient_scratch: S.Vector(qs.float),
+			momenta: S.Vector(qs.float),
+			invMasses: S.Vector(qs.float)
 		}
 		mcmc.KernelPropStats(HMCKernel)
 
@@ -109,7 +107,7 @@ local function HMCKernel(params)
 			HMCKernel.entries:insert({field="larjNewCompIndices", type=S.Vector(uint64)})
 		end
 
-		terra HMCKernel:__doinit(stepSize: qs.primfloat, numSteps: uint64, doStepSizeAdapt: bool)
+		terra HMCKernel:__doinit(stepSize: qs.float, numSteps: uint64, doStepSizeAdapt: bool)
 			-- Will cause self.dualTrace to initialize, which is not strictly necessary, but it's
 			--    easier to just let this happen then to try and work around it.
 			self:initmembers()
@@ -147,7 +145,7 @@ local function HMCKernel(params)
 			var H = self:hamiltonian(currTrace.logprob)
 
 			-- Simulate a Hamiltonian dynamics trajectory
-			var newlp : qs.primfloat
+			var newlp : qs.float
 			veccopy(&self.positions_scratch, &self.positions)
 			veccopy(&self.gradient_scratch, &self.gradient)
 			for i=0,self.numSteps do
@@ -214,7 +212,7 @@ local function HMCKernel(params)
 				if newn ~= oldn then
 					-- We need to rebuild our internal dual trace.
 					self.dualTrace:destruct()
-					[DualTraceType.copyFromRealType(qs.primfloat)](&self.dualTrace, currTrace)
+					[DualTraceType.copyFromRealType(qs.float)](&self.dualTrace, currTrace)
 
 					-- We also need to re-size and re-initialize the inverse masses.
 					self.invMasses:clear(); self.invMasses:reserve(newn)
@@ -289,11 +287,11 @@ local function HMCKernel(params)
 			var n = self.positions:size()
 			self.momenta:clear(); self.momenta:reserve(n)
 			for i=0,n do
-				self.momenta:insert([distrib.gaussian(qs.primfloat)].sample(0.0, 1.0) * self.invMasses(i))
+				self.momenta:insert([distrib.gaussian(qs.float)].sample(0.0, 1.0) * self.invMasses(i))
 			end
 		end
 
-		terra HMCKernel:hamiltonian(logprob: qs.primfloat)
+		terra HMCKernel:hamiltonian(logprob: qs.float)
 			var kinetic = 0.0
 			for i=0,self.momenta:size() do
 				var m = self.momenta(i)
@@ -303,7 +301,7 @@ local function HMCKernel(params)
 			return kinetic + logprob
 		end
 
-		terra HMCKernel:step(pos: &S.Vector(qs.primfloat), grad: &S.Vector(qs.primfloat))
+		terra HMCKernel:step(pos: &S.Vector(qs.float), grad: &S.Vector(qs.float))
 			-- Momentum half-update
 			for i=0,self.momenta:size() do
 				self.momenta(i) = self.momenta(i) + 0.5*self.stepSize*grad(i)
@@ -321,7 +319,7 @@ local function HMCKernel(params)
 			return lp
 		end
 
-		terra HMCKernel:traceUpdate(pos: &S.Vector(qs.primfloat), grad: &S.Vector(qs.primfloat))
+		terra HMCKernel:traceUpdate(pos: &S.Vector(qs.float), grad: &S.Vector(qs.float))
 			-- Convert pos into dual numbers
 			veccopy(&self.positions_dual_scratch, pos)
 			-- Copy dual-converted pos back into the trace
@@ -390,7 +388,7 @@ local function HMCKernel(params)
 		end
 
 		-- Code adapted from Stan
-		terra HMCKernel:adaptStepSize(dH: qs.primfloat)
+		terra HMCKernel:adaptStepSize(dH: qs.float)
 			var EdH = tmath.exp(dH)
 			if EdH > 1.0 then EdH = 1.0 end
 			-- Supress NaNs

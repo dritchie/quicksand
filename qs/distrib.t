@@ -46,7 +46,7 @@ end)
 --------------------------------------------
 
 D.gaussian = S.memoize(function(real)
-	local flt = qs.primfloat
+	local flt = qs.float
 	return {
 		sample = terra(mu: real, sigma: real) : real
 			var u:flt, v:flt, x:flt, y:flt, q:flt
@@ -68,7 +68,7 @@ end)
 
 --------------------------------------------
 
-local gamma_cof = global(qs.primfloat[6])
+local gamma_cof = global(qs.float[6])
 local terra init_gamma_cof()
 	gamma_cof = array(76.18009172947146,
 					  -86.50532032941677,
@@ -94,7 +94,7 @@ end)
 
 
 D.gamma = S.memoize(function(real)
-	local flt = qs.primfloat
+	local flt = qs.float
 	local terra sample(shape: real, scale: real) : real
 		if shape < 1.0 then return sample(1.0+shape,scale) * tmath.pow(R.random(), 1.0/shape) end
 		var x:flt, v:real, u:flt
@@ -161,7 +161,7 @@ D.binomial = S.memoize(function(real)
 	local inv2 = 1/2
 	local inv3 = 1/3
 	local inv6 = 1/6
-	local flt = qs.primfloat
+	local flt = qs.float
 	return {
 		sample = terra(p: real, n: int) : int
 			var k = 0

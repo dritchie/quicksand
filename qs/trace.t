@@ -59,7 +59,7 @@ function compilation.endRCTypeDetectionPass()
 end
 function compilation.endCompilation()
 	currentProgram = nil
-	qs.real = qs.primfloat
+	qs.real = qs.float
 end
 
 
@@ -528,7 +528,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 		loglikelihood: real,
 		newlogprob: real,
 		oldlogprob: real,
-		temperature: qs.primfloat,
+		temperature: qs.float,
 		conditionsSatisfied: bool,
 		returnValue: RetType,
 		-- This starts out false, but is forever after set to true as soon as :update() is run
@@ -636,7 +636,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 		end
 	end
 
-	terra RandExecTraceT:setTemperature(temp: qs.primfloat)
+	terra RandExecTraceT:setTemperature(temp: qs.float)
 		self.temperature = temp
 	end
 	RandExecTraceT.methods.setTemperature:setinlined(true)

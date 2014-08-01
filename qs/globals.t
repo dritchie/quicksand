@@ -10,15 +10,15 @@ local qs = {}
 
 
 -- Primitive floating point type.
-qs.primfloat = double
+qs.float = double
 
--- Dual number type that replaces primfloat during automatic differentiation (AD)
+-- Dual number type that replaces float during automatic differentiation (AD)
 qs.dualnum = ad.num
 
 -- The type of real numbers that a program sees
--- Either qs.primfloat or qs.dualnum
--- Defaults to qs.primfloat
-qs.real = qs.primfloat
+-- Either qs.float or qs.dualnum
+-- Defaults to qs.float
+qs.real = qs.float
 
 -- Retrieves the value of a number, whether it's primitive or a dual number
 qs.val = ad.val
