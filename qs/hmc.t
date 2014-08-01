@@ -124,8 +124,7 @@ local function HMCKernel(params)
 			self.lastTraceSeen = nil
 			self.lastNumUpdatesSeen = -1
 
-			self.propsMade = 0
-			self.propsAccepted = 0
+			self:initKernelPropStats()
 		end
 
 		HMCKernel.methods.__init = macro(function(self)

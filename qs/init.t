@@ -25,7 +25,8 @@ addExports(
 	"infer",
 	"mcmc",
 	"larj",
-	"hmc"
+	"hmc",
+	"harm"
 )
 
 

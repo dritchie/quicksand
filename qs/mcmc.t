@@ -117,6 +117,10 @@ local function KernelPropStats(T)
 	T.entries:insert({field="propsAccepted", type=uint64})
 	terra T:proposalsMade() return self.propsMade end
 	terra T:proposalsAccepted() return self.propsAccepted end
+	terra T:initKernelPropStats()
+		self.propsMade = 0
+		self.propsAccepted = 0
+	end
 end
 
 
@@ -148,8 +152,7 @@ local function TraceMHKernel(params)
 		KernelPropStats(TraceMHKernel)
 
 		terra TraceMHKernel:__init()
-			self.propsMade = 0
-			self.propsAccepted = 0
+			self:initKernelPropStats()
 		end
 
 		terra TraceMHKernel:next(currTrace: &TraceType, iter: uint, numiters: uint)
@@ -162,9 +165,9 @@ local function TraceMHKernel(params)
 			var rc = [TraceType.getChoice(filter)](nextTrace, randindex)
 			-- Propose a change to that random choice and re-execute the program
 			var fwdPropLP, rvsPropLP = rc:proposal()
-			nextTrace:update(rc:isStructural())
+			nextTrace:update(rc:getIsStructural())
 			-- Account for probability changes due to dimension-jumping
-			if rc:isStructural() then
+			if rc:getIsStructural() then
 				var oldnumchoices = numchoices
 				var newnumchoices = [TraceType.countChoices(filter)](nextTrace)
 				fwdPropLP = fwdPropLP + nextTrace.newlogprob - tmath.log(double(oldnumchoices))

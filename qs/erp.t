@@ -611,8 +611,8 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 		-- Is this choice structural or not?
 		-- (Structural-ness is a static property, but sometimes we need to query it at runtime for
 		--    different choices)
-		terra RandomChoiceT:isStructural() return isStructural end
-		RandomChoiceT.methods.isStructural:setinlined(true)
+		terra RandomChoiceT:getIsStructural() return isStructural end
+		RandomChoiceT.methods.getIsStructural:setinlined(true)
 
 		-- Rescore by recomputing prior logprob
 		terra RandomChoiceT:rescore() : {}

@@ -103,7 +103,7 @@ local function expectedValueTest(name, prog, trueExp, method, optparams)
 		methodfn = method(numsamps)
 	elseif method == qs.MCMC then
 		local kernel = optparams.kernel or qs.TraceMHKernel()
-		local params = {numsamps=numsamps, lag=(optparams.lag or _lag)}
+		local params = {numsamps=numsamps, lag=(optparams.lag or _lag), verbose=(optparams.verbose or false)}
 		methodfn = method(kernel, params)
 	end
 
@@ -770,6 +770,22 @@ end), 0.1, qs.MCMC,
 	},
 	{0.1, 0.9}
 )})
+
+
+-- HARM tests
+expectedValueTest(
+"harm expectation",
+qs.program(function()
+	return terra()
+		var sum = qs.real(0.0)
+		for i=0,10 do
+			sum = sum + qs.gaussian(0.1, 0.5, {struc=false})
+		end
+		return sum/10.0
+	end
+end), 0.1, qs.MCMC,
+{kernel=qs.HARMKernel()})
+
 
 
 

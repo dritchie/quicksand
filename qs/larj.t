@@ -50,9 +50,6 @@ local RandomChoicePair = S.memoize(function(RCType)
 	RandomChoicePair.methods.isAnnealingOut:setinlined(true)
 	RandomChoicePair.methods.isAnnealingIn:setinlined(true)
 
-	terra RandomChoicePair:isStructural() return self.choice1:isStructural() end
-	RandomChoicePair.methods.isStructural:setinlined(true)
-
 	-- To do proposals, we have one of our random choices propose, and then we set the value
 	--    of the other one.
 	terra RandomChoicePair:proposal() : {real, real}
@@ -368,8 +365,8 @@ local function LARJKernel(params)
 			self.annealingKernel:init()
 			self.intervals = intervals
 			self.stepsPerInt = stepsPerInt
-			self.propsMade = 0
-			self.propsAccepted = 0
+
+			self:initKernelPropStats()
 		end
 
 		LARJKernel.methods.__init = macro(function(self)
