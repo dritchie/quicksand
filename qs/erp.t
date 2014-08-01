@@ -267,6 +267,10 @@ end)
 
 
 
+-- Every random choice gets a lexically-unique ID (to identify where in the source
+--    code it came from)
+local erplexid = 0
+
 
 
 local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
@@ -287,9 +291,10 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 		local struct RandomChoiceT(trace.Object)
 		{
 			logprob: real,
-			active: bool, 		-- Was this choice reachable in last run of program?
-			needsRescore: bool  -- Do we need to recalculate the prior probability of this choice?
-								--   (because external code i.e. changed its value)
+			active: bool, 		 -- Was this choice reachable in last run of program?
+			needsRescore: bool,  -- Do we need to recalculate the prior probability of this choice?
+								 --   (because external code i.e. changed its value)
+			lexid: uint 		 -- Lexically-unique ID
 		}
 		local ValueType = sl.sample:gettype().returntype
 		assert(util.isPOD(ValueType) or ValueType:getmethod("copy"),
@@ -543,7 +548,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 		-- Constructor 1: Has an initial value
 		local paramSyms = ParamTypes:map(function(pt) return symbol(pt) end)
 		local initValSym = symbol(util.isPOD(ValueType) and ValueType or &ValueType)
-		terra RandomChoiceT:__init([paramSyms], [initValSym]) : {}
+		terra RandomChoiceT:__init([paramSyms], lexid: uint, [initValSym]) : {}
 			escape
 				for i=1,#ParamTypes do
 					emit quote ptrSafeCopy(self.[paramField(i)], [paramSyms[i]]) end
@@ -559,14 +564,15 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 			end
 			self:rescore()
 			self.active = true
+			self.lexid = lexid
 		end
 
 		-- Constructor 2: Has no initial value
 		paramSyms = ParamTypes:map(function(pt) return symbol(pt) end)
-		terra RandomChoiceT:__init([paramSyms]) : {}
+		terra RandomChoiceT:__init([paramSyms], lexid: uint) : {}
 			-- Draw a sample, then call the other constructor
 			var sampledval = sl.sample([paramSyms])
-			self:__init([paramSyms],
+			self:__init([paramSyms], lexid,
 				        [util.isPOD(ValueType) and sampledval or (`&sampledval)])
 		end
 
@@ -613,6 +619,10 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 		--    different choices)
 		terra RandomChoiceT:getIsStructural() return isStructural end
 		RandomChoiceT.methods.getIsStructural:setinlined(true)
+
+		-- Retrieve lexically-unique ID
+		terra RandomChoiceT:getLexicalID() return self.lexid end
+		RandomChoiceT.methods.getLexicalID:setinlined(true)		
 
 		-- Rescore by recomputing prior logprob
 		terra RandomChoiceT:rescore() : {}
@@ -667,13 +677,15 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 			args[N] = nil
 		end
 		local isStructural = getStructuralOption(opts)
-		local initVal = nil
+		local extraInitArgs = terralib.newlist()
+		extraInitArgs:insert(erplexid)
+		erplexid = erplexid + 1
 		if structHasMember(opts, Options.InitialVal) then
-			initVal = (`opts.[Options.InitialVal])
+			extraInitArgs:insert(`opts.[Options.InitialVal])
 		end
 		local RandomChoiceT = RandomChoice(qs.real, isStructural)
 		---------------------
-		return trace.lookupRandomChoiceValue(RandomChoiceT, args, initVal)
+		return trace.lookupRandomChoiceValue(RandomChoiceT, args, extraInitArgs)
 	end)
 
 	-- This macro facilitates models where we directly observe the values
