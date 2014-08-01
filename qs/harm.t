@@ -12,6 +12,7 @@ local random = util.require("lib.random")
 -- params are:
 --    * scale: How big the proposed jumps should be (defaults to 1.0)
 --    * doScaleAdapt: Automatically adapt scale param (defaults to true)
+-- Based on .mcmcharm from LaplacesDemon (https://github.com/Statisticat/LaplacesDemon)
 local function HARMKernel(params)
 	params = params or {}
 	local scale = params.scale or 1.0
