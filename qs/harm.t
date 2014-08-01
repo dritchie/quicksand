@@ -118,11 +118,19 @@ local function HARMKernel(params)
 			if currTrace ~= self.lastTraceSeen or currTrace.numUpdates ~= self.lastNumUpdatesSeen then
 				self.realcomps:clear()
 				var numvars = [TraceType.countChoices({isStructural=false})](currTrace)
+				if numvars == 0 then
+					S.printf("HARMKernel: found 0 non-structural random choices\n")
+					S.assert(false)
+				end
 				for i=0,numvars do
 					var rc = [TraceType.getChoice({isStructural=false})](currTrace, i)
 					rc:getUnboundedRealComps(&self.realcomps)
 				end
 				var n = self.realcomps:size()
+				if n == 0 then
+					S.printf("HARMKernel: found non-structural random choices, but none of them are real-valued.\n")
+					S.assert(false)
+				end
 				self.realcomps_scratch:clear()
 				for i=0,n do self.realcomps_scratch:insert() end
 			end

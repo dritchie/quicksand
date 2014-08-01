@@ -162,6 +162,11 @@ local function TraceMHKernel(params)
 			var nextTrace = TraceType.salloc():copy(currTrace)
 			-- Pick a random choice uniformly at random
 			var numchoices = [TraceType.countChoices(filter)](nextTrace)
+			if numchoices == 0 then
+				S.printf("TraceMHKernel: found 0 random choices satisfying doStruct=%s and doNonstruct=%s\n",
+					[tostring(doStruct)], [tostring(doNonstruct)])
+				S.assert(false)
+			end
 			var randindex = random.random() * numchoices
 			var rc = [TraceType.getChoice(filter)](nextTrace, randindex)
 			-- Propose a change to that random choice and re-execute the program

@@ -195,6 +195,10 @@ local function HMCKernel(params)
 				self.positions:clear()
 				var newn = 0U
 				var numvars = [TraceType.countChoices({isStructural=false})](currTrace)
+				if numvars == 0 then
+					S.printf("HMC: found 0 non-structural random choices.\n")
+					S.assert(false)
+				end
 				var numCompsPerChoice = [S.Vector(uint64)].salloc():init()
 				for i=0,numvars do
 					var rc = [TraceType.getChoice({isStructural=false})](currTrace, i)
@@ -203,7 +207,7 @@ local function HMCKernel(params)
 					numCompsPerChoice:insert(n)
 				end
 				if newn == 0 then
-					S.printf("Cannot use HMC on a program with no real-valued non-structural random choices.\n")
+					S.printf("HMC: found non-structural random choices, but none of them are real-valued.\n")
 					S.assert(false)
 				end
 
