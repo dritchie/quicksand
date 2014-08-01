@@ -105,8 +105,9 @@ local function WeightedRejectionSample(numsamps)
 				samples:insert()
 				var s = samples:get(samples:size()-1)
 				S.copy(s.value, tr.returnValue)
-				s.logprob = tr.logprob
-				s.loglikelihood = tr.loglikelihood
+				-- Undo effects of tempering so sample stores unnormalized posterior under true distribution
+				s.logprob = tr.logprob*tr.temperature
+				s.loglikelihood = tr.loglikelihood*tr.temperature
 			end
 		end
 	end

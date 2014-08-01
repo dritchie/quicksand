@@ -65,7 +65,8 @@ local function MCMC(kernel, params)
 					samples:insert()
 					var s = samples:get(samples:size()-1)
 					S.copy(s.value, currTrace.returnValue)
-					s.logprob = currTrace.logprob
+					-- Undo effects of tempering so sample stores unnormalized posterior under true distribution
+					s.logprob = currTrace.logprob*currTrace.temperature 
 					s.loglikelihood = 0.0 	-- Since MCMC already draws samples according to prior*likelihood
 				end
 			end
