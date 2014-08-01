@@ -24,6 +24,8 @@ To verify that everything's working correctly, you can run the test suite and ch
 
 	terra tests/testsuite.t
 
+Since Quicksand is by its nature stochastic, a test can very occasionally fail here or there ('transdimensional expectation' is the most frequent culprit). This is nothing to worry about.
+
 Quicksand has been tested on OSX and should also work on Linux. On Windows, your mileage may vary.
 
 
