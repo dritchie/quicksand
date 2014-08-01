@@ -437,6 +437,9 @@ Implements the [Locally-Annealed Reversible-Jump MCMC](http://web.stanford.edu/~
 `qs.HMCKernel({stepSize, numSteps, doStepSizeAdapt})`  
 Implements the [Hamiltonian Monte Carlo](http://arxiv.org/pdf/1206.1901.pdf) algorithm. This kernel is only applicable to non-structural random choices with continuous values. It is particularly useful for cases where multiple random choices are tightly constrained via factor or observe statements. The `stepSize` option specifies the step size for the leapfrog integrator used to generate proposals (defaults to `1.0`). The `numSteps` option specifies how many leapfrog steps should be used per proposal (defaults to `1`, i.e. Langevin Monte Carlo). The `doStepSizeAdapt` flag determines whether the kernel will automatically adapt its step size to achieve a target optimal acceptance ratio (defaults to `true`). Step size adaptation uses the algorithm described in [this paper](http://arxiv.org/abs/1111.4246).
 
+`qs.HARMKernel({scale, doScaleAdapt})`  
+Implements the [Hit And Run Metropolis algorithm](http://www.bayesian-inference.com/mcmcharm). This kernel is only applicable to non-structural random choices with continueous values. The option `scale` determines the largest possible jump the kernel will take (defaults to `1.0`), and the 'doScaleAdapt' flag determines whether the kernel automatically adapts its scale to achieve a target optimal acceptance ratio (defaults to `true`).
+
 `qs.MixtureKernel(kernels, weights)`  
 Constructs a kernel that stochastically alternates between multiple different kernels. For example, to make a kernel that uses `qs.LARJKernel` to change structural variables 10% of the time and uses `qs.TraceMHKernel` to change nonstructural variables otherwise:
 
