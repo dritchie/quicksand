@@ -32,7 +32,11 @@ local function HARMKernel(params)
 			adapting: bool,
 
 			realcomps: S.Vector(qs.float),
-			direction: S.Vector(qs.float)
+			realcomps_scratch: S.Vector(qs.float),
+			direction: S.Vector(qs.float),
+
+			lastTraceSeen: &TraceType,
+			lastNumUpdatesSeen: int64
 		}
 		mcmc.KernelPropStats(HARMKernel)
 
@@ -41,6 +45,9 @@ local function HARMKernel(params)
 
 			self.scale = scale
 			self.adapting = doAdapt
+
+			self.lastTraceSeen = nil
+			self.lastNumUpdatesSeen = -1
 
 			self:initKernelPropStats()
 		end
@@ -51,13 +58,8 @@ local function HARMKernel(params)
 
 		terra HARMKernel:next(currTrace: &TraceType, iter: uint, numiters: uint)
 			self.propsMade = self.propsMade + 1
-			-- Get the real components of the trace
-			self.realcomps:clear()
-			var numvars = [TraceType.countChoices({isStructural=false})](currTrace)
-			for i=0,numvars do
-				var rc = [TraceType.getChoice({isStructural=false})](currTrace, i)
-				rc:getUnboundedRealComps(&self.realcomps)
-			end
+			-- Check if the trace has been interfered with since last :next call
+			self:checkForChanges(currTrace)
 			var n = self.realcomps:size()
 			-- Sample a random direction (random unit vector of dimension realcomps:size())
 			-- Use propose a move along this direction, scaled by ~ uniform(0, self.scale)
@@ -72,14 +74,15 @@ local function HARMKernel(params)
 			var scale = random.random() * self.scale
 			for i=0,n do
 				self.direction(i) = self.direction(i)/norm
-				self.realcomps(i) = self.realcomps(i) + (scale * self.direction(i))
+				self.realcomps_scratch(i) = self.realcomps(i) + (scale * self.direction(i))
 			end
 			-- Create a scratch trace, copy these components back into it, and update.
 			var nextTrace = TraceType.salloc():copy(currTrace)
 			var index = 0ULL
+			var numvars = [TraceType.countChoices({isStructural=false})](nextTrace)
 			for i=0,numvars do
 				var rc = [TraceType.getChoice({isStructural=false})](nextTrace, i)
-				index = index + rc:setUnboundedRealComps(&self.realcomps, index)
+				index = index + rc:setUnboundedRealComps(&self.realcomps_scratch, index)
 			end
 			nextTrace:update(false)
 			-- Accept/reject
@@ -89,6 +92,7 @@ local function HARMKernel(params)
 			if nextTrace.conditionsSatisfied and tmath.log(random.random()) < acceptThresh then
 				self.propsAccepted = self.propsAccepted + 1
 				util.swap(@currTrace, @nextTrace)
+				util.swap(self.realcomps, self.realcomps_scratch)
 				-- Do adaptation
 				if self.adapting then
 					var t = targetAcceptRatio
@@ -100,6 +104,26 @@ local function HARMKernel(params)
 					var t = targetAcceptRatio
 					self.scale = tmath.fabs(self.scale - (self.scale / (t * (1.0 - t))) * t/(iter+1))
 				end
+			end
+
+			-- Record the new last-seen stats
+			self.lastTraceSeen = currTrace
+			self.lastNumUpdatesSeen = currTrace.numUpdates
+		end
+
+		terra HARMKernel:checkForChanges(currTrace: &TraceType)
+			-- If the trace has been interfered with since the last run of this kernel, then we
+			--    need to fetch the real components back from the trace
+			if currTrace ~= self.lastTraceSeen or currTrace.numUpdates ~= self.lastNumUpdatesSeen then
+				self.realcomps:clear()
+				var numvars = [TraceType.countChoices({isStructural=false})](currTrace)
+				for i=0,numvars do
+					var rc = [TraceType.getChoice({isStructural=false})](currTrace, i)
+					rc:getUnboundedRealComps(&self.realcomps)
+				end
+				var n = self.realcomps:size()
+				self.realcomps_scratch:clear()
+				for i=0,n do self.realcomps_scratch:insert() end
 			end
 		end
 
