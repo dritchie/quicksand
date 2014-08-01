@@ -106,7 +106,7 @@ In the rest of this document, we'll describe the components that go into buildin
 
 # Real Numbers
 
-Within a probabilistic program, any real (i.e. floating point) number used should have the type `qs.real`. This defaults to `double`, but can be changed by modifying the value of `qs.primfloat` in `qs/globals.t`. Inference methods can also change the value of `qs.real` (e.g. Hamiltonian Monte Carlo).
+Within a probabilistic program, any real (i.e. floating point) number used should have the type `qs.real`. This defaults to `double`, but can be changed by modifying the value of `qs.float` in `qs/globals.t`. Inference methods can also change the value of `qs.real` (e.g. Hamiltonian Monte Carlo).
 
 
 # Random Choices
