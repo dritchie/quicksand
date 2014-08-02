@@ -320,8 +320,6 @@ end
 
 
 
--- TODO: DriftKernel?
-
 
 
 return

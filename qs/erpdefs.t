@@ -288,7 +288,7 @@ end)
 
 
 
--- TODO: Circular/spherical distributions (e.g. von Mises, von Mishes-Fisher)
+-- TODO: Circular/spherical distributions (e.g. von Mises, von Mishes-Fisher), multivariate Gaussians, others???
 
 
 

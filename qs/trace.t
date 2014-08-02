@@ -90,12 +90,6 @@ end
 
 -- Most of this mirrors the copy functionality from lib.std
 
--- TODO: If we implement all __copy methods with macros, then doesn't this whole system
---    just become uncecessary? It might still be important if we ever need to parameterize
---    on more than the real type in the future, though. Still, it would reduce code, and it would
---    feel like less of a hack than some of the 'rawget' stuff below. Though generated code would
---    be more bloated...
-
 function copyFromRealType(real)
 	return macro(function(self, other)
 		local function hascopy(T)

@@ -24,7 +24,6 @@ qs.real = qs.float
 qs.val = ad.val
 
 -- Expose the function that seeds the random number generator
--- TODO: Should this be here?
 qs.initrand = rand.initrand
 
 return qs
