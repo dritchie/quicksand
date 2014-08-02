@@ -88,6 +88,8 @@ Here's a slightly more complex (and useful) example: estimating parameters of a 
 
 	end)
 
+	-- Query the model for the parameters with highest
+	--    posterior probability.
 	local infer =
 		qs.infer(p2,
 				 qs.MAP,
