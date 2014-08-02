@@ -74,13 +74,13 @@ Here's a slightly more complex (and useful) example: estimating parameters of a 
 		-- Here's our mixture model
 		return terra()
 			var mixparams =
-				qs.dirichlet(arrayof(qs.real, 1.0, 1.0, 1.0), {struc=false})
+				qs.dirichlet(arrayof(qs.real, 1.0, 1.0, 1.0))
 			var means =
-				arrayof(qs.real, qs.gaussian(0.0, 5.0, {struc=false}),
-								 qs.gaussian(0.0, 5.0, {struc=false}),
-								 qs.gaussian(0.0, 5.0, {struc=false}))
+				arrayof(qs.real, qs.gaussian(0.0, 5.0),
+								 qs.gaussian(0.0, 5.0),
+								 qs.gaussian(0.0, 5.0))
 			for d in data do
-				var which = qs.multinomial(mixparams, {struc=false})
+				var which = qs.multinomial(mixparams)
 				qs.gaussian.observe(d, means[which], 1.0)
 			end
 			return mixparams, means
@@ -88,11 +88,17 @@ Here's a slightly more complex (and useful) example: estimating parameters of a 
 
 	end)
 
-	local infer = qs.infer(p2, qs.MAP, qs.MCMC(qs.TraceMHKernel(), {numsamps=50000, verbose=true}))
+	local infer =
+		qs.infer(p2,
+				 qs.MAP,
+				 qs.MCMC(qs.TraceMHKernel(),
+				 		 {numsamps=50000, verbose=true}))
 	local terra run()
 		var mixparams, means = infer()
-		S.printf("mixparams:  %g  %g  %g\n", mixparams[0], mixparams[1], mixparams[2])
-		S.printf("means:  %g  %g  %g\n", means[0], means[1], means[2])
+		S.printf("mixparams:  %g  %g  %g\n",
+			mixparams[0], mixparams[1], mixparams[2])
+		S.printf("means:  %g  %g  %g\n",
+			means[0], means[1], means[2])
 	end
 	run()
 
@@ -102,7 +108,7 @@ If you run this code, you should see output like the following:
 
 	 Iteration 50000/50000
 	Acceptance Ratio: 23603/50000 (47.206%)
-	Time: 0.753325
+	Time: 2.753325
 	mixparams:  0.123469  0.348266  0.528265
 	means:  5.21575  -0.0444654  -5.95487
 
