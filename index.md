@@ -114,7 +114,12 @@ If you run this code, you should see output like the following:
 
 That's not a bad guess, computer. Not bad at all.
 
-In the rest of this document, we'll describe the parts that go into building these programs, as well as the procedures available for performing inference on them.
+
+## More Examples
+
+You can find more examples of probabilistic programs over at the [Forest respository](http://forestdb.org/) for generative models. Most of these programs are written in Church (a LISP-based probabilistic programming language), but nearly all of the same principles apply. The online [Probabilistic Models of Cognition](https://probmods.org/) course is also a great source for more examples and explanation.
+
+In the rest of this document, we'll describe the parts that go into building Quicksand programs, as well as the procedures available for performing inference on them.
 
 
 # Real Numbers
@@ -519,11 +524,6 @@ Computes the autocorrelation of the samples and returns it in a vector (you're r
 ### qs.Histogram
 
 Returns a normalized histogram of program return values. This only makes sense for programs with discrete return values. The histogram is stored in a hash map (see `qs/lib/hashmap.t`); again, you're responsible for freeing its memory. If the return type of the program is a struct, then it must have the `__hash` method defined.
-
-
-# More Examples
-
-You can find more examples of probabilistic programs over at the [Forest respository](http://forestdb.org/) for generative models. Most of these programs are written in Church (a LISP-based probabilistic programming language), but nearly all of the same principles apply. The online [Probabilistic Models of Cognition](https://probmods.org/) course is also a great source for more examples and explanation.
 
 
 # Acknowledgments
