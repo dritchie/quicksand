@@ -848,7 +848,10 @@ expectedValueTest(
 qs.program(function()
 	return terra()
 		var sum = qs.real(0.0)
-		for i=0,10 do
+		for i=0,5 do
+			sum = sum + qs.gaussian(0.1, 0.5, {struc=false})
+		end
+		for i=0,5 do
 			sum = sum + qs.gaussian(0.1, 0.5, {struc=false})
 		end
 		return sum/10.0
@@ -866,7 +869,10 @@ qs.program(function()
 		for i=0,n do 
 			sum = sum + qs.gaussian(0.1, 0.5, {struc=false})
 		end
-		return sum/n
+		for i=0,n do 
+			sum = sum + qs.gaussian(0.1, 0.5, {struc=false})
+		end
+		return sum/(2.0*n)
 	end
 end), 0.1, qs.MCMC,
 {kernel = qs.MixtureKernel(
@@ -876,6 +882,42 @@ end), 0.1, qs.MCMC,
 	},
 	{0.1, 0.9}
 )})
+
+compileAndRunTest(
+"drift vector compile and run (lexical state sharing)",
+function() return
+qs.infer(
+qs.program(function()
+	return terra()
+		var d1 = qs.dirichlet(arrayof(qs.real, 1.0, 1.0, 1.0, 1.0), {struc=false})
+		var d2 = qs.dirichlet(arrayof(qs.real, 1.0, 1.0, 1.0, 1.0), {struc=false})
+		return d1
+	end
+end),
+qs.Samples, qs.MCMC(qs.DriftKernel({lexicalScaleSharing=true}), {numsamps=_numsamps}))() end)
+
+compileAndRunTest(
+"drift vector structure change compile and run (lexical state sharing)",
+function() return
+qs.infer(
+qs.program(function()
+	return terra()
+		var d = qs.dirichlet(arrayof(qs.real, 1.0, 1.0, 1.0, 1.0), {struc=false})
+		if qs.flip(0.5) then
+			d = qs.dirichlet(arrayof(qs.real, 1.0, 1.0, 1.0, 1.0), {struc=false})
+		end
+		return d
+	end
+end),
+qs.Samples,
+qs.MCMC(qs.MixtureKernel(
+	{
+		qs.TraceMHKernel({doNonstruct=false}),
+		qs.DriftKernel({lexicalScaleSharing=true})
+	},
+	{0.1, 0.9}
+),
+{numsamps=_numsamps}))() end)
 
 
 

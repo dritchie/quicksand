@@ -267,11 +267,6 @@ end)
 
 
 
--- Every random choice gets a lexically-unique ID (to identify where in the source
---    code it came from)
-local erplexid = 0
-
-
 
 local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 
@@ -678,8 +673,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 		end
 		local isStructural = getStructuralOption(opts)
 		local extraInitArgs = terralib.newlist()
-		extraInitArgs:insert(erplexid)
-		erplexid = erplexid + 1
+		extraInitArgs:insert(trace.compilation.nextErpLexID())
 		if structHasMember(opts, Options.InitialVal) then
 			extraInitArgs:insert(`opts.[Options.InitialVal])
 		end

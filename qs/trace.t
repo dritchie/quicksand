@@ -29,6 +29,9 @@ local function recordRandomChoiceTypeUse(RCType)
 	end
 end
 
+-- Every random choice gets a lexical ID identifying where in the code it came from
+local erplexid = 0
+
 -- Signaling functions exposed to code in other files
 -- NOTE: Because of the recursive dependency in trace compilation
 --    (i.e. what we break using asynchronous compilation), these functions
@@ -43,8 +46,13 @@ function compilation.currentlyCompilingProgram()
 	return currentProgram
 end
 function compilation.beginCompilation(program, real)
-	currentProgram = program
-	qs.real = real
+	-- Reentrancy: only set these variables if we're not already compiling
+	--    this program
+	if program ~= currentProgram then
+		currentProgram = program
+		qs.real = real
+		erplexid = 0
+	end
 end
 function compilation.beginRCTypeDetectionPass()
 	rcTypesUsed = {}
@@ -56,10 +64,17 @@ function compilation.isDoingTypeDetectionPass()
 end
 function compilation.endRCTypeDetectionPass()
 	rcTypeDetectionPass = false
+	-- Also reset the erpid counter
+	erplexid = 0
 end
 function compilation.endCompilation()
 	currentProgram = nil
 	qs.real = qs.float
+end
+function compilation.nextErpLexID()
+	local id = erplexid
+	erplexid = erplexid+1
+	return id
 end
 
 

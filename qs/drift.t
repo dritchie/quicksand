@@ -6,6 +6,7 @@ local mcmc = util.require("mcmc")
 local distrib = util.require("distrib")
 local tmath = util.require("lib.tmath")
 local random = util.require("lib.random")
+local HashMap = util.require("lib.hashmap")
 
 
 
@@ -76,12 +77,17 @@ local function DriftKernel(params)
 	end)
 
 	return function(TraceType)
+
+		local struct ScaleAdapter(S.Object)
+		{
+			scale: qs.float,
+			varEst: RunningVar
+		}
 		
 		local struct DriftKernel(S.Object)
 		{
 			initScale: qs.float,
-			scales: S.Vector(qs.float),
-			varEsts: S.Vector(RunningVar),
+			scaleGroups: S.Vector(S.Vector(ScaleAdapter)),
 			adapting: bool,
 
 			realcomps: S.Vector(qs.float),
@@ -92,17 +98,19 @@ local function DriftKernel(params)
 		}
 		mcmc.KernelPropStats(DriftKernel)
 
-		-- Maps component index to scale index (constructed using random choice lexical IDs)
+		-- Mapping component index to scale group index (constructed using random choice lexical IDs)
+		-- Also mapping component index to index within scale group
 		if lexicalScaleSharing then
-			DriftKernel.entries:insert({field="scaleIndexForComp", type=S.Vector(uint)})
+			DriftKernel.entries:insert({field="scaleGroupIndexForComp", type=S.Vector(uint)})
+			DriftKernel.entries:insert({field="indexWithinScaleGroupForComp", type=S.Vector(uint)})
 		end
 
 		-- Retrieve the scale index for a give component index
-		DriftKernel.methods.scaleIndex = macro(function(self, i)
+		DriftKernel.methods.getScale = macro(function(self, i)
 			if lexicalScaleSharing then
-				return `self.scaleIndexForComp(i)
+				return `&self.scaleGroups(self.scaleGroupIndexForComp(i))(self.indexWithinScaleGroupForComp(i))
 			else
-				return i
+				return `&self.scaleGroups(0)(i)
 			end
 		end)
 
@@ -130,7 +138,7 @@ local function DriftKernel(params)
 			var n = self.realcomps:size()
 			-- For each component, sample a gaussian perturbation
 			for i=0,n do
-				self.realcomps_scratch(i) = [distrib.gaussian(qs.float)].sample(self.realcomps(i), self.scales(self:scaleIndex(i)))
+				self.realcomps_scratch(i) = [distrib.gaussian(qs.float)].sample(self.realcomps(i), self:getScale(i).scale)
 			end
 
 			-- Create a scratch trace, copy these components back into it, and update.
@@ -165,18 +173,30 @@ local function DriftKernel(params)
 
 		terra DriftKernel:checkForChanges(currTrace: &TraceType)
 			-- If the trace has been interfered with since the last run of this kernel, then we
-			--    need to fetch the real components back from the trace
+			--    need to fetch the real components back from the trace, as well as update/rebuild any data
+			--    structures used for adaptation.
 			if currTrace ~= self.lastTraceSeen or currTrace.numUpdates ~= self.lastNumUpdatesSeen then
 				self.realcomps:clear()
-				-- Also may need to rebuild the scale index map, if we're doing lexical scale sharing
-				var maxlexid = 0U
+				var nCompsPerScaleGroup = [S.Vector(uint)].salloc():init()
+				var lexidToGroupIndex = [HashMap(uint,uint)].salloc():init()
 				escape
 					if lexicalScaleSharing then
+						-- Initialize vectors used to map component ids to appropriate scales.
 						emit quote
-							self.scaleIndexForComp:clear()
+							self.scaleGroupIndexForComp:clear()
+							self.indexWithinScaleGroupForComp:clear()
+						end
+					else
+						-- There's just one scale group, so go ahead and initialize it, if it hasn't
+					    --    been initialized yet.
+						emit quote
+							if self.scaleGroups:size() == 0 then
+								self.scaleGroups:insert():init()
+							end
 						end
 					end
 				end
+				-- Fetch all the real components from the trace
 				var numvars = [TraceType.countChoices({isStructural=false})](currTrace)
 				if numvars == 0 then
 					S.printf("DriftKernel: found 0 non-structural random choices\n")
@@ -189,8 +209,27 @@ local function DriftKernel(params)
 						if lexicalScaleSharing then
 							emit quote
 								var lexid = rc:getLexicalID()
-								if lexid > maxlexid then maxlexid = lexid end
-								for j=0,ncomps do self.scaleIndexForComp:insert(lexid) end
+								var groupIndexPtr, foundit = lexidToGroupIndex:getOrCreatePointer(lexid)
+								if not foundit then
+									@groupIndexPtr = nCompsPerScaleGroup:size()
+									nCompsPerScaleGroup:insert(0)
+									-- Initialize the scale group if needed.
+									if self.scaleGroups:size() < @groupIndexPtr+1 then
+										var oldsize = self.scaleGroups:size()
+										for i=oldsize,@groupIndexPtr+1 do
+											self.scaleGroups:insert():init()
+										end
+									end 
+								end
+								-- Fill in the vectors used to map component ids to appropriate scales.
+								for j=0,ncomps do
+									self.scaleGroupIndexForComp:insert(@groupIndexPtr)
+									self.indexWithinScaleGroupForComp:insert(j)
+								end
+								-- Keep track of the maximum number of components per scale group
+								if ncomps > nCompsPerScaleGroup(@groupIndexPtr) then
+									nCompsPerScaleGroup(@groupIndexPtr) = ncomps
+								end
 							end
 						end
 					end
@@ -203,16 +242,30 @@ local function DriftKernel(params)
 				self.realcomps_scratch:clear()
 				for i=0,n do self.realcomps_scratch:insert() end
 
-				var newScalesSize = [lexicalScaleSharing and (`maxlexid+1) or n]
+				-- S.printf("\n-----\n")
+				-- S.printf("num groups: %u\n", nCompsPerScaleGroup:size())
+				-- for i=0,nCompsPerScaleGroup:size() do
+				-- 	S.printf("%u  ", nCompsPerScaleGroup(i))
+				-- end
+				-- S.printf("\n")
 
-				-- Also may need to expand scales vector and corresponding variance estimators
-				-- (Note that scales never shrinks, it only expands. This way when we go from a big
-				--     structure to a small one and back again, we don't throw away any adaptation)
-				var oldScalesSize = self.scales:size()
-				for i=oldScalesSize,newScalesSize do
-					self.scales:insert(self.initScale)
-					var vest = self.varEsts:insert()
-					vest:init()
+				-- If we're not doing lexical scale sharing, then all scales are concentrated in one group
+				escape
+					if not lexicalScaleSharing then
+						emit quote nCompsPerScaleGroup:insert(n) end
+					end
+				end
+
+				-- Expand any scale groups if they aren't yet big enough to accommodate all the components
+				--    we found.
+				-- S.printf("scaleGroups:size(): %u\n", self.scaleGroups:size())
+				for i=0,nCompsPerScaleGroup:size() do
+					var oldsize = self.scaleGroups(i):size()
+					-- S.printf("oldsize: %u, nCompsPerScaleGroup(i): %u\n", oldsize, nCompsPerScaleGroup(i))
+					for j=oldsize,nCompsPerScaleGroup(i) do
+						var scale = self.scaleGroups(i):insert():init()
+						scale.scale = self.initScale
+					end
 				end
 			end
 		end
@@ -221,25 +274,27 @@ local function DriftKernel(params)
 		terra DriftKernel:adapt()
 			var ratio = qs.float(self.propsAccepted)/self.propsMade
 			for i=0,self.realcomps:size() do 
-				var si = self:scaleIndex(i)
+				var scale = self:getScale(i)
 				-- Update our running estimates of variance (but only if our kernel
 				--    is doing minimally well enough that we can trust the samples)
 				if ratio >= 0.05 and self.propsAccepted > 5 then
-					self.varEsts(si):update(self.realcomps(i))
+					scale.varEst:update(self.realcomps(i))
 				end
 			end
-			for si=0,self.scales:size() do
-				-- Update scales based on these variance estimates (but only if the
-				--    estimators have collected enough samples)
-				if self.varEsts(si):getN() > 100 then
-					self.scales(si) = self.varEsts(si):getStdDev()
-				end
+			for scaleGroup in self.scaleGroups do
+				for scale in scaleGroup do
+					-- Update scales based on these variance estimates (but only if the
+					--    estimators have collected enough samples)
+					if scale.varEst:getN() > 100 then
+						scale.scale = scale.varEst:getStdDev()
+					end
 
-				-- If we're not doing well enough to collect samples, then we should
-				--    uniformly scale down the proposal scales to lead to a higher
-				--    acceptance ratio
-				if ratio < 0.05 and self.propsAccepted > 5 then
-					self.scales(si) = self.scales(si) * 0.99
+					-- If we're not doing well enough to collect samples, then we should
+					--    uniformly scale down the proposal scales to lead to a higher
+					--    acceptance ratio
+					if ratio < 0.05 and self.propsAccepted > 5 then
+						scale.scale = scale.scale * 0.99
+					end
 				end
 			end
 		end
