@@ -3,8 +3,6 @@ layout: post
 title: Quicksand
 ---
 
-<h1>Getting Started with Quicksand</h1>
-
 Quicksand is a library for [probabilistic programming](http://web.stanford.edu/~ngoodman/papers/POPL2013-abstract.pdf) in the Terra programming language. Since Terra is a low-level language, Quicksand programs have a level of abstraction comparable to that of C. Users can write these programs directly, or potentially use Quicksand as a compiler target for higher-level/domain-specific languages.
 
 <h1>Table of Contents</h1>
