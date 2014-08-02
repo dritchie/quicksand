@@ -49,21 +49,38 @@ The probabilistic program `p1` draws two random values via unbiased coin flips (
 Here's a slightly more complex (and useful) example: estimating parameters of a Gaussian mixture model from data:
 
 	local qs = terralib.require("qs")
-	local S = terralib.require("qs.lib.std")
+	local distrib = terralib.require("qs.distrib")
+	local S = util.require("lib.std")
 
 	local p2 = qs.program(function()
-		
+
+		-- Populate a global vector with synthetic data
 		local data = global(S.Vector(qs.real))
+		local norm = distrib.gaussian(qs.real).sample
+		local terra initdata()
+			data:init()
+			for i=0,400 do
+				data:insert(norm(-6.0, 1.0))
+			end
+			for i=0,200 do
+				data:insert(norm(0.0, 1.0))
+			end
+			for i=0,100 do
+				data:insert(norm(5.0, 1.0))
+			end
+		end
+		initdata()
 
-		-- Initialize data vector...
-
+		-- Here's our mixture model
 		return terra()
-			var mixparams = qs.dirichlet(array(1.0, 1.0, 1.0))
-			var means = array(qs.gaussian(0.0, 1.0),
-							  qs.gaussian(0.0, 1.0),
-							  qs.gaussian(0.0, 1.0))
+			var mixparams =
+				qs.dirichlet(arrayof(qs.real, 1.0, 1.0, 1.0), {struc=false})
+			var means =
+				arrayof(qs.real, qs.gaussian(0.0, 5.0, {struc=false}),
+								 qs.gaussian(0.0, 5.0, {struc=false}),
+								 qs.gaussian(0.0, 5.0, {struc=false}))
 			for d in data do
-				var which = qs.multinomial(mixparams)
+				var which = qs.multinomial(mixparams, {struc=false})
 				qs.gaussian.observe(d, means[which], 1.0)
 			end
 			return mixparams, means
@@ -71,39 +88,27 @@ Here's a slightly more complex (and useful) example: estimating parameters of a 
 
 	end)
 
-Here, the program `p2` draws mixture parameters and mixture component means from Dirichlet and Gaussian priors, respectively. For each data point, it then selects which mixture component the data point was drawn from (a latent variable), and then accounts for the probability of drawing that data point from that mixture component (here, all components have a constant standard deviation of 1).
+	local infer = qs.infer(p2, qs.MAP, qs.MCMC(qs.TraceMHKernel(), {numsamps=50000, verbose=true}))
+	local terra run()
+		var mixparams, means = infer()
+		S.printf("mixparams:  %g  %g  %g\n", mixparams[0], mixparams[1], mixparams[2])
+		S.printf("means:  %g  %g  %g\n", means[0], means[1], means[2])
+	end
+	run()
 
-Probabilistic programs can naturally represent distributions with a variable number of random variables. Here, we'll show how to use this ability to perform model selection by inferring the number of components in our mixture model:
+Here, the program `p2` draws mixture parameters and mixture component means from Dirichlet and Gaussian priors, respectively. For each data point, it then selects which mixture component the data point was drawn from (a latent variable), and then accounts for the probability of drawing that data point from that mixture component.
 
-	local qs = terralib.require("qs")
-	local S = terralib.require("qs.lib.std")
+If you run this code, you should see output like the following:
 
-	local p3 = qs.program(function()
-		
-		local data = global(S.Vector(qs.real))
+	 Iteration 50000/50000
+	Acceptance Ratio: 23603/50000 (47.206%)
+	Time: 0.753325
+	mixparams:  0.123469  0.348266  0.528265
+	means:  5.21575  -0.0444654  -5.95487
 
-		-- Initialize data vector...
+That's not a bad guess, computer. Not bad at all.
 
-		return terra()
-			var nums = array(2, 3, 4, 5)
-			var n = nums[qs.multinomial(0.25, 0.25, 0.25, 0.25)]
-			var mixprior  = [S.Vector(qs.real)].salloc():init()
-			var means = [S.Vector(qs.real)].salloc():init()
-			for i=0,n do
-				mixprior:insert(1.0)
-				means:insert(qs.gaussian(0.0, 1.0))
-			end
-			var mixparams = qs.dirichlet(mixprior)
-			for d in data do
-				var which = qs.multinomial(mixparams)
-				qs.gaussian.observe(d, means[which], 1.0)
-			end
-			return n
-		end
-
-	end)
-
-In the rest of this document, we'll describe the components that go into building these programs, as well as the procedures available for performing inference on them.
+In the rest of this document, we'll describe the parts that go into building these programs, as well as the procedures available for performing inference on them.
 
 
 # Real Numbers
@@ -162,7 +167,24 @@ In addition to their native parameters, every random choice can also take a set 
 Specifies the initial value of the random choice for MCMC inference.
 
 `struc`  
-Declares whether this random choice can affect the *structure* of the program execution trace--more specifically, whether the value of this random choice can determine the existence of other random choices. This must be a boolean compile-time constant (`true`, `false`, or a Lua boolean variable), and it defaults to `true` for all choices unless otherwise specified. Some inference methods depend on being able to separate structural vs. non-structural random choices. In principle, whether a choice is structural can be determined automatically through program analysis. To keep the system as simple as possible, though, Quicksand requires manual specification. It is usually not difficult to identify when a choice is non-structural (most random choices are, except for some latent variables in hierarchical or recursive models).
+Declares whether this random choice can affect the *structure* of the program execution trace--more specifically, whether the value of this random choice can determine the existence of other random choices. This must be a boolean compile-time constant (`true`, `false`, or a Lua boolean variable), and it defaults to `true` for all choices unless otherwise specified. In principle, whether a choice is structural can be determined automatically through program analysis. To keep the system as simple as possible, though, Quicksand requires manual specification. It is usually not difficult to identify when a choice is non-structural. In fact, most random choices are, except for some latent variables in hierarchical or recursive models. For example, in this toy program:
+
+	qs.program(function()
+		return terra()
+			var a = 0.7
+			if qs.flip(0.9) then
+				a = qs.beta(1.0, 5.0, {struc=false})
+			end
+			var b = qs.flip(a, {struc=false})
+			qs.condition(b)
+			return a
+		end
+	end)
+
+the first `qs.flip` is structural, because it determines whether or not the `qs.beta` gets called. However, the `qs.beta` and the second `qs.flip` are non structural, since they don't affect the creation of any further random choices.
+
+Why bother with this? Annotating your random choices with `struc` tags will make most inference methods run noticeably faster. Additionally, many inference methods operate only on non-structural choices, so you must tag your random choices in order to use them.
+
 
 ## Creating New Random Choice Functions
 
