@@ -16,7 +16,7 @@ You'll first need to download and build [Terra](http://terralang.org).
 Then just add the following to your `.profile`, `.bashrc`, or equivalent file:
 
 	export QS=[path to quicksand root]
-	export LUA_PATH="$LUA_PATH;$QS/?.t;$QS/?/init.t"
+	export LUA_PATH="$LUA_PATH;./?.t;./?/init.t;$QS/?.t;$QS/?/init.t"
 
 To verify that everything's working correctly, you can run the test suite and check that all tests pass:
 
