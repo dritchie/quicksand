@@ -1,8 +1,6 @@
-local util = terralib.require("qs.lib.util")
-
-local S = util.require("lib.std")
-local trace = util.require("trace")
-local qs = util.require("globals")
+local S = terralib.require("qs.lib.std")
+local trace = terralib.require("qs.trace")
+local qs = terralib.require("qs.globals")
 
 
 -- A program is the entity that quicksand performs inference on.

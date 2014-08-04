@@ -1,13 +1,11 @@
 -- This is the main package index file
 
-local util = terralib.require("qs.lib.util")
-
-local qs = util.require("globals")
+local qs = terralib.require("qs.globals")
 
 local function addExports(...)
 	local files = {...}
 	for _,file in ipairs(files) do
-		local mod = util.require(file)
+		local mod = terralib.require(file)
 		if mod.exports then
 			for k,v in pairs(mod.exports) do
 				qs[k] = v
@@ -18,16 +16,16 @@ end
 
 
 addExports(
-	"erp",
-	"erpdefs",
-	"trace",
-	"progmodule",
-	"infer",
-	"mcmc",
-	"larj",
-	"hmc",
-	"harm",
-	"drift"
+	"qs.erp",
+	"qs.erpdefs",
+	"qs.trace",
+	"qs.progmodule",
+	"qs.infer",
+	"qs.mcmc",
+	"qs.larj",
+	"qs.hmc",
+	"qs.harm",
+	"qs.drift"
 )
 
 

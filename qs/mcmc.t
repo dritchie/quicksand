@@ -1,13 +1,13 @@
 local util = terralib.require("qs.lib.util")
 
-local S = util.require("lib.std")
-local qs = util.require("globals")
-local progmod = util.require("progmodule")
-local trace = util.require("trace")
-local random = util.require("lib.random")
-local distrib = util.require("distrib")
-local tmath = util.require("lib.tmath")
-local infer = util.require("infer")
+local S = terralib.require("qs.lib.std")
+local qs = terralib.require("qs.globals")
+local progmod = terralib.require("qs.progmodule")
+local trace = terralib.require("qs.trace")
+local random = terralib.require("qs.lib.random")
+local distrib = terralib.require("qs.distrib")
+local tmath = terralib.require("qs.lib.tmath")
+local infer = terralib.require("qs.infer")
 
 local C = terralib.includecstring [[
 #include <stdio.h>

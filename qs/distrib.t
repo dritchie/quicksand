@@ -1,9 +1,7 @@
-local util = terralib.require("qs.lib.util")
-
-local S = util.require("lib.std")
-local tmath = util.require("lib.tmath")
-local qs = util.require("globals")
-local R = util.require("lib.random")
+local S = terralib.require("qs.lib.std")
+local tmath = terralib.require("qs.lib.tmath")
+local qs = terralib.require("qs.globals")
+local R = terralib.require("qs.lib.random")
 
 
 local D = {}

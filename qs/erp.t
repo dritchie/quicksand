@@ -1,9 +1,9 @@
 local util = terralib.require("qs.lib.util")
 
-local S = util.require("lib.std")
-local tmath = util.require("lib.tmath")
-local qs = util.require("globals")
-local trace = util.require("trace")
+local S = terralib.require("qs.lib.std")
+local tmath = terralib.require("qs.lib.tmath")
+local qs = terralib.require("qs.globals")
+local trace = terralib.require("qs.trace")
 
 
 

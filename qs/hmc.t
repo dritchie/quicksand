@@ -1,12 +1,12 @@
 local util = terralib.require("qs.lib.util")
 
-local S = util.require("lib.std")
-local qs = util.require("globals")
-local mcmc = util.require("mcmc")
-local distrib = util.require("distrib")
-local tmath = util.require("lib.tmath")
-local random = util.require("lib.random")
-local larj = util.require("larj")
+local S = terralib.require("qs.lib.std")
+local qs = terralib.require("qs.globals")
+local mcmc = terralib.require("qs.mcmc")
+local distrib = terralib.require("qs.distrib")
+local tmath = terralib.require("qs.lib.tmath")
+local random = terralib.require("qs.lib.random")
+local larj = terralib.require("qs.larj")
 
 
 -- Univariate dual-averaging optimization (for HMC step size adaptation)

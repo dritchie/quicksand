@@ -1,9 +1,9 @@
 local util = terralib.require("qs.lib.util")
 
-local S = util.require("lib.std")
-local qs = util.require("globals")
-local Hash = util.require("lib.hash")
-local HashMap = util.require("lib.hashmap")
+local S = terralib.require("qs.lib.std")
+local qs = terralib.require("qs.globals")
+local Hash = terralib.require("qs.lib.hash")
+local HashMap = terralib.require("qs.lib.hashmap")
 
 
 

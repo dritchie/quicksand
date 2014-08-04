@@ -1,7 +1,6 @@
-local util = terralib.require("qs.lib.util")
-local S = util.require("lib.std")
-local ad = util.require("lib.ad")
-local rand = util.require("lib.random")
+local S = terralib.require("qs.lib.std")
+local ad = terralib.require("qs.lib.ad")
+local rand = terralib.require("qs.lib.random")
 
 -- Globally-available stuff
 -- This will form the set of methods/types that get exported

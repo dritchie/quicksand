@@ -4,6 +4,5 @@
 -- ]]
 
 -- Now using overloaded AD math primitives instead
-local util = terralib.require("qs.lib.util")
-local ad = util.require("ad")
+local ad = terralib.require("qs.lib.ad")
 return ad.math

@@ -1,7 +1,5 @@
-local util = terralib.require("qs.lib.util")
-
-local S = util.require("std")
-local MemoryPool = util.require("memoryPool")
+local S = terralib.require("qs.lib.std")
+local MemoryPool = terralib.require("qs.lib.memoryPool")
 local cmath = terralib.includec("math.h")
 
 

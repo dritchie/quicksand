@@ -42,31 +42,6 @@ end)
 U.equal = equal
 
 
--- Variant of terralib.require that works with relative paths (as long as those
---    paths don't contain .. (i.e. upward references))
-local function stringsplit(self, sep)
-    local sep, fields = sep or ":", {}
-    local pattern = string.format("([^%s]+)", sep)
-    self:gsub(pattern, function(c) fields[#fields+1] = c end)
-    return fields
-end
-function U.require(name)
-	local callermodule = debug.getinfo(2, "S").source:gsub("@", ""):gsub("%.t", "")
-	local rawparts = stringsplit(callermodule, "/")
-	local parts = terralib.newlist()
-	for _,p in ipairs(rawparts) do
-		if p ~= "." then parts:insert(p) end
-	end
-	local path = name
-	if #parts > 1 then
-		path = parts[1]
-		for i=2,#parts-1 do path = string.format("%s.%s", path, parts[i]) end
-		path = string.format("%s.%s", path, name)
-	end
-	return terralib.require(path)
-end
-
-
 -- Timing
 local timestuff = terralib.includecstring [[
 #include <stdlib.h>
