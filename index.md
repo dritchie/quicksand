@@ -45,8 +45,8 @@ The probabilistic program `p1` draws two random values via unbiased coin flips (
 Here's a slightly more complex (and useful) example: estimating parameters of a Gaussian mixture model from data:
 
 	local qs = terralib.require("qs")
+	local std = terralib.require("qs.lib.std")
 	local distrib = terralib.require("qs.distrib")
-	local S = util.require("lib.std")
 
 	local p2 = qs.program(function()
 
@@ -93,9 +93,9 @@ Here's a slightly more complex (and useful) example: estimating parameters of a 
 				 		 {numsamps=50000, verbose=true}))
 	local terra run()
 		var mixparams, means = infer()
-		S.printf("mixparams:  %g  %g  %g\n",
+		std.printf("mixparams:  %g  %g  %g\n",
 			mixparams[0], mixparams[1], mixparams[2])
-		S.printf("means:  %g  %g  %g\n",
+		std.printf("means:  %g  %g  %g\n",
 			means[0], means[1], means[2])
 	end
 	run()
