@@ -76,7 +76,7 @@ Here's a slightly more complex (and useful) example: estimating parameters of a 
 								 qs.gaussian(0.0, 5.0),
 								 qs.gaussian(0.0, 5.0))
 			for d in data do
-				var which = qs.multinomial(mixparams)
+				var which = qs.categorical(mixparams)
 				qs.gaussian.observe(d, means[which], 1.0)
 			end
 			return mixparams, means
@@ -160,8 +160,8 @@ Draw from a binomial distribution with probability `p` and number of trials `n`.
 `qs.poisson(lambda)`  
 Draw from a poisson distribution with average rate `lambda`.
 
-`qs.multinomial(params)`  
-Draw from a multinomial distribution. `params` may be either an array or a vector of real numbers.
+`qs.categorical(params)`  
+Draw from a categorical distribution. `params` may be either an array or a vector of real numbers.
 
 `qs.dirichlet(params)`  
 Draw from a dirichlet distribution. `params` may be either an array or a vector of real numbers.
@@ -329,8 +329,8 @@ For large projects, it can be useful to develop probabilistic programs modularly
 	local mod = qs.module(function() 
 		return
 		{
-			dirichletMultinomial3 = qs.func(terra()
-				return qs.multinomial(qs.dirichlet(array(1.0, 1.0, 1.0)))
+			dirichletCategorical3 = qs.func(terra()
+				return qs.categorical(qs.dirichlet(array(1.0, 1.0, 1.0)))
 			end)
 		}
 	end)
@@ -343,7 +343,7 @@ The argument to `qs.module` is a Lua function that can return anything (but typi
 			var items = array(10, 22, 30)
 			var choices : int[10]
 			for i=0,10 do
-				choices[i] = m.dirichletMultinomial3()
+				choices[i] = m.dirichletCategorical3()
 			end
 			qs.condition(choices[0] == 22)
 			return choices 
