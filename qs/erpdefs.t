@@ -116,6 +116,8 @@ end)
 
 --------------------------------------------
 
+-- TODO: Better (i.e. more localized) proposals for binomial, poisson?
+
 ERPs.binomial = erp.makeRandomChoice(
 	distrib.binomial
 )
