@@ -260,7 +260,7 @@ end)
 
 --------------------------------------------
 
-D.multinomial_array = S.memoize(function(N)
+D.categorical_array = S.memoize(function(N)
 	return S.memoize(function(real)
 		return {
 			sample = terra(params: real[N]) : int
@@ -289,7 +289,7 @@ D.multinomial_array = S.memoize(function(N)
 	end)
 end)
 
-D.multinomial_vector = S.memoize(function(real)
+D.categorical_vector = S.memoize(function(real)
 	return {
 		sample = terra(params: &S.Vector(real)) : int
 			var sum = real(0.0)

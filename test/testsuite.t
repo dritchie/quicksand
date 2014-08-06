@@ -174,13 +174,13 @@ local terra testLogprobFunctions()
 	assertEq("poisson lp (1)", [D.poisson(double)].logprob(2, 4.0), -1.9205584583201643)
 	assertEq("poisson lp (2)", [D.poisson(double)].logprob(5, 4.0), -1.8560199371825927)
 	assertEq("poisson lp (3)", [D.poisson(double)].logprob(7, 4.0), -2.821100833226181)
-	assertEq("multinomial lp (1)", [D.multinomial_array(3)(double)].logprob(0, array(0.2, 0.6, 0.2)), M.log(0.2))
-	assertEq("multinomial lp (2)", [D.multinomial_array(3)(double)].logprob(1, array(0.2, 0.6, 0.2)), M.log(0.6))
-	assertEq("multinomial lp (3)", [D.multinomial_array(3)(double)].logprob(2, array(0.2, 0.6, 0.2)), M.log(0.2))
+	assertEq("categorical lp (1)", [D.categorical_array(3)(double)].logprob(0, array(0.2, 0.6, 0.2)), M.log(0.2))
+	assertEq("categorical lp (2)", [D.categorical_array(3)(double)].logprob(1, array(0.2, 0.6, 0.2)), M.log(0.6))
+	assertEq("categorical lp (3)", [D.categorical_array(3)(double)].logprob(2, array(0.2, 0.6, 0.2)), M.log(0.2))
 	var mp = [S.Vector(double)].salloc():init(); mp:insert(0.2); mp:insert(0.6); mp:insert(0.2)
-	assertEq("multinomial lp (4)", [D.multinomial_vector(double)].logprob(0, mp), M.log(0.2))
-	assertEq("multinomial lp (5)", [D.multinomial_vector(double)].logprob(1, mp), M.log(0.6))
-	assertEq("multinomial lp (6)", [D.multinomial_vector(double)].logprob(2, mp), M.log(0.2))
+	assertEq("categorical lp (4)", [D.categorical_vector(double)].logprob(0, mp), M.log(0.2))
+	assertEq("categorical lp (5)", [D.categorical_vector(double)].logprob(1, mp), M.log(0.6))
+	assertEq("categorical lp (6)", [D.categorical_vector(double)].logprob(2, mp), M.log(0.2))
 	assertEq("dirichlet lp (1)", [D.dirichlet_array(3)(double)].logprob(array(0.6, 0.3, 0.1), array(1.0, 1.0, 1.0)), 0.693147180559945)
 	var dv = [S.Vector(double)].salloc():init(); dv:insert(0.6); dv:insert(0.3); dv:insert(0.1)
 	var dp = [S.Vector(double)].salloc():init(); dp:insert(1.0); dp:insert(1.0); dp:insert(1.0)
@@ -206,22 +206,22 @@ qs.program(function()
 end), 0.5*(.1+.4))
 
 multiMethodExpectedValueTest(
-"multinomial expectation (1)",
+"categorical expectation (1)",
 qs.program(function()
 	return terra()
 		var items = array(0.2, 0.3, 0.4)
-		return items[qs.multinomial(array(0.2, 0.6, 0.2), {struc=false})]
+		return items[qs.categorical(array(0.2, 0.6, 0.2), {struc=false})]
 	end
 end), 0.2*.2 + 0.6*.3 + 0.2*.4)
 
 multiMethodExpectedValueTest(
-"multinomial expectation (2)",
+"categorical expectation (2)",
 qs.program(function()
 	return terra()
 		var items = array(0.2, 0.3, 0.4)
 		var params = [S.Vector(qs.real)].salloc():init()
 		params:insert(0.2); params:insert(0.6); params:insert(0.2)
-		return items[qs.multinomial(params, {struc=false})]
+		return items[qs.categorical(params, {struc=false})]
 	end
 end), 0.2*.2 + 0.6*.3 + 0.2*.4)
 
@@ -326,7 +326,7 @@ compileAndRunTest(
 function()
 return qs.infer(qs.program(function()
 		return terra()
-			return qs.multinomial(array(0.6, 0.3, 0.1), {struc=false})
+			return qs.categorical(array(0.6, 0.3, 0.1), {struc=false})
 		end
 	end),
 	qs.Histogram, qs.WeightedRejectionSample(_numsamps))()
@@ -379,7 +379,7 @@ qs.program(function()
 		return x == 2
 	end)
 	return terra()
-		var x = qs.multinomial(array(0.6, 0.3, 0.1), {struc=false})
+		var x = qs.categorical(array(0.6, 0.3, 0.1), {struc=false})
 		cf(x)
 		return x
 	end

@@ -130,41 +130,41 @@ ERPs.poisson = erp.makeRandomChoice(
 
 --------------------------------------------
 
--- We expose one multinomial random choice that handles
+-- We expose one categorical random choice that handles
 --    both array and Vector parameters.
 
-local multinomial_array = S.memoize(function(N)
-	return erp.makeRandomChoice(distrib.multinomial_array(N))
+local categorical_array = S.memoize(function(N)
+	return erp.makeRandomChoice(distrib.categorical_array(N))
 end)
-local multinomial_vector = erp.makeRandomChoice(
-	distrib.multinomial_vector
+local categorical_vector = erp.makeRandomChoice(
+	distrib.categorical_vector
 )
 
-ERPs.multinomial = macro(function(params, opts)
+ERPs.categorical = macro(function(params, opts)
 	opts = opts or `{}
 	local T = params:gettype()
 	if T:isarray() and T.type == qs.real then
-		return `[multinomial_array(T.N)](params, opts)
+		return `[categorical_array(T.N)](params, opts)
 	elseif T == &S.Vector(qs.real) then
-		return `multinomial_vector(params, opts)
+		return `categorical_vector(params, opts)
 	else
-		error("multinomial params must be an array or &Vector of reals")
+		error("categorical params must be an array or &Vector of reals")
 	end
 end)
-ERPs.multinomial.observe = macro(function(val, params)
+ERPs.categorical.observe = macro(function(val, params)
 	local T = params:gettype()
 	if T:isarray() and T.type == qs.real then
-		return `[multinomial_array(T.N)].observe(val, params)
+		return `[categorical_array(T.N)].observe(val, params)
 	elseif T == &S.Vector(qs.real) then
-		return `multinomial_vector.observe(val, params)
+		return `categorical_vector.observe(val, params)
 	else
-		error("multinomial params must be an array or &Vector of reals")
+		error("categorical params must be an array or &Vector of reals")
 	end
 end)
 
 --------------------------------------------
 
--- dirichlet is set up just like multinomial
+-- dirichlet is set up just like categorical
 
 local dirichlet_array = S.memoize(function(N)
 	return erp.makeRandomChoice(

@@ -273,7 +273,7 @@ local function MixtureKernel(kernels, weights)
 		end
 
 		terra MixtureKernel:next(currTrace: &TraceType, iter: uint, numiters: uint)
-			var randindex = [distrib.multinomial_array(#weights)(qs.float)].sample(self.weights)
+			var randindex = [distrib.categorical_array(#weights)(qs.float)].sample(self.weights)
 			escape
 				for i,k in ipairs(skernels) do
 					emit quote
