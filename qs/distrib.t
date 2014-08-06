@@ -186,7 +186,7 @@ D.binomial = S.memoize(function(real)
 			return k
 		end,
 		logprob = terra(s: int, p: real, n: int) : real
-			if s >= n then return [-math.huge] end
+			if s < 0 or s >= n then return [-math.huge] end
 			var q = 1.0-p
 			var S = s + inv2
 			var T = n - s - inv2
@@ -252,6 +252,7 @@ D.poisson = S.memoize(function(real)
 			return int(k-1)
 		end,
 		logprob = terra(k: int, mu: real) : real
+			if k < 0 then return [-math.huge] end
 			return k * tmath.log(mu) - mu - lnfact(k)
 		end
 	}
