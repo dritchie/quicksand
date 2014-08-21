@@ -261,9 +261,9 @@ ChoicePointersWithCounter = S.memoize(function(RandomChoiceT)
 	return ChoicePointersWithCounterT
 end)
 
-local Address = S.Vector(int)
+local Address = S.Vector(uint64)
 local terra hashAddress(addr: Address)
-	return Hash.rawhash([&int8](addr:get(0)), sizeof(int)*addr:size())
+	return Hash.rawhash([&int8](addr:get(0)), sizeof(uint64)*addr:size())
 end
 hashAddress:setinlined(true)
 
@@ -302,7 +302,7 @@ RandomDB = S.memoize(function(RandomChoiceT)
 		-- TODO: If we have lots of random choices happening deep in the call stack,
 		--    a hash table will end of storing a ton of redundant information (a complete
 		--    copy of the adddress stack for each key). Maybe experiment with tries instead?
-        --    (expected nlogn instead of constant lookup, though...)
+        --    (expected logn instead of constant lookup, though...)
 		choicemap: ChoiceMap(RandomChoiceT),
 		choicelist: ChoicePointersWithCounter(RandomChoiceT)
 	}
@@ -651,12 +651,20 @@ local _RandExecTrace = S.memoize(function(program, real)
 	RandExecTraceT.methods.setTemperature:setinlined(true)
 
 	local nextAddress = 0
-	RandExecTraceT.methods.pushAddressStack = macro(function(self)
+	RandExecTraceT.methods.pushAddressStack = macro(function(self, optloopindex)
 		local address = nextAddress
 		nextAddress = nextAddress + 1
 		return quote
 			if self.canStructureChange then
-				self.addressStack:insert(address)
+				escape
+					-- If we're given a loop index, then form a composite address by squishing the bits of the
+					--    address and the loop index together.
+					if optloopindex then
+						emit quote self.addressStack:insert( (uint64(address) << 32) or uint64(optloopindex) ) end
+					else
+						emit quote self.addressStack:insert(address) end
+					end
+				end
 			end
 		end
 	end)
@@ -1145,32 +1153,34 @@ end
 --     with nested loops and structure change.
 local struct __Range
 {
-	min: int64,
-	max: int64
+	min: int32,
+	max: int32
 }
 __Range.metamethods.__for = function(syms,iter,body)
 	return syms, quote
 		var it = iter
-		escape
-			if not rcTypeDetectionPass then
-				emit quote
-					if [isRecordingTrace()] then [globalTrace()]:pushAddressStack() end
-				end
-			end
-		end
+		var i : uint32 = 0
 		for [syms[1]] = it.min,it.max do
-			body
-		end
-		escape
-			if not rcTypeDetectionPass then
-				emit quote
-					if [isRecordingTrace()] then [globalTrace()]:popAddressStack() end
+			escape
+				if not rcTypeDetectionPass then
+					emit quote
+						if [isRecordingTrace()] then [globalTrace()]:pushAddressStack(i) end
+					end
 				end
 			end
+			body
+			escape
+				if not rcTypeDetectionPass then
+					emit quote
+						if [isRecordingTrace()] then [globalTrace()]:popAddressStack() end
+					end
+				end
+			end
+			i = i + 1
 		end
 	end
 end
-local terra range(min: int64, max: int64)
+local terra range(min: int32, max: int32)
 	return __Range { min, max }
 end
 range:setinlined(true)
