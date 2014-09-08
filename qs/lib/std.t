@@ -45,13 +45,22 @@ end)
 local generatedtor = macro(function(self)
     local T = self:gettype()
     local stmts = terralib.newlist()
+    -- First, execute any custom destructor logic
     if T.methods.__destruct then
         stmts:insert(`self:__destruct())
     end
-    local entries = T:getentries()
-    for i,e in ipairs(entries) do
-        if e.field then --not a union
-            stmts:insert(`S.rundestructor(self.[e.field]))
+    -- Then, no matter what, destruct all the members of this struct
+    -- The default behavior is overridable by the "__destructmembers" method
+    -- This can be useful for e.g. inheritance systems, where an object's
+    --    dynamic type can differ from its static type.
+    if T.methods.__destructmembers then
+        stmts:insert(`self:__destructmembers())
+    else
+        local entries = T:getentries()
+        for i,e in ipairs(entries) do
+            if e.field then --not a union
+                stmts:insert(`S.rundestructor(self.[e.field]))
+            end
         end
     end
     return stmts
