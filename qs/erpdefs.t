@@ -98,6 +98,10 @@ ERPs.betamv = macro(function(m, v, opts)
 	opts = opts or `{}
 	return quote
 		var tmp = m*m - m + v
+		-- v must be less than m - m^2, otherwise we get NaNs
+		-- (it is impossible to construct a beta distribution
+		--    with variance that high)
+		S.assert(tmp < 0.0)
 		var a = - m * tmp / v
 		var b = (m - 1) * tmp / v
 	in
