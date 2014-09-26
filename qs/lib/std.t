@@ -180,7 +180,7 @@ function S.Object(T)
         self:destruct()
         C.free(self)
     end 
-    terra T.methods.alloc()
+    terra T.methods.alloc() : &T
         return [&T](C.malloc(sizeof(T)))
     end
     T.methods.salloc = macro(function()
@@ -191,7 +191,7 @@ function S.Object(T)
             &t
         end
     end)
-    terra T:destruct()
+    terra T:destruct() : {}
         generatedtor(@self)
     end
     T.methods.init = macro(function(self, ...)
@@ -203,7 +203,7 @@ function S.Object(T)
             s
         end
     end)
-    terra T:initmembers()
+    terra T:initmembers() : {}
         S.initmembers(@self)
     end
     terra T:copy(other: &T) : &T
