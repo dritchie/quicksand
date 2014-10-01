@@ -1026,8 +1026,8 @@ local function _func(terrafn, ismethod)
 		-- If we're wrapping a method, ensure that the first argument (i.e. self)
 		--    is pointer-to-struct
 		if ismethod and (not argtypes[1]:ispointertostruct()) then
-			args[1] = `&args[1]
-			argtypes[1] = `&argtypes[1]
+			args[1] = `&[args[1]]
+			argtypes[1] = &argtypes[1]
 		end
 		local argstmp = argtypes:map(function(t) return symbol(t) end)
 		local RetType = getFuncReturnType(data.def)
