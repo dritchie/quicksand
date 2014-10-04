@@ -27,6 +27,11 @@ local Sample = S.memoize(function(T)
 		self.logprob = 0.0
 		self.loglikelihood = 0.0
 	end
+	terra Sample:__copy(other: &Sample)
+		S.copy(self.value, other.value)
+		self.logprob = other.logprob
+		self.loglikelihood = other.loglikelihood
+	end
 	return Sample
 end)
 
