@@ -1119,7 +1119,7 @@ end
 -- Extremely common factor
 local softeq = macro(function(x, target, softness)
 	local gausslp = distrib.gaussian(qs.real).logprob
-	return `factor(gausslp(x, target, softness))
+	return `gausslp(x, target, softness)
 end)
 
 -- 'condition' imposes a hard constraint on the program execution space.
