@@ -4,6 +4,7 @@ local S = terralib.require("qs.lib.std")
 local qs = terralib.require("qs.globals")
 local Hash = terralib.require("qs.lib.hash")
 local HashMap = terralib.require("qs.lib.hashmap")
+local distrib = terralib.require("qs.distrib")
 
 
 
@@ -1115,6 +1116,12 @@ local function factorfunc(fn)
 	end)
 end
 
+-- Extremely common factor
+local softeq = macro(function(x, target, softness)
+	local gausslp = distrib.gaussian(qs.real).logprob
+	return `factor(gausslp(x, target, softness))
+end)
+
 -- 'condition' imposes a hard constraint on the program execution space.
 -- 'conditionfunc' is like 'factorfunc', but for hard constraints.
 local condition = macro(function(pred)
@@ -1203,6 +1210,7 @@ return
 		method = method,
 		factor = factor,
 		factorfunc = factorfunc,
+		softeq = softeq,
 		condition = condition,
 		conditionfunc = conditionfunc,
 		range = range
