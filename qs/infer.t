@@ -301,6 +301,7 @@ return
 	SampleType = SampleType,
 	exports = 
 	{
+		Sample = Sample,
 		ReturnType = ReturnType,
 		SampleType = SampleType,
 		infer = infer,
