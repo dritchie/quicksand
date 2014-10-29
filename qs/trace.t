@@ -929,11 +929,6 @@ local function isRecordingTrace()
 	return `[globalTrace()] ~= nil
 end
 
-local printType = macro(function(x)
-	print(x:gettype())
-	return quote end
-end)
-
 -- Look up random choice value in the currently-executing trace
 -- Non-POD values are returned by pointer
 local function lookupRandomChoiceValue(RandomChoiceT, params, extraInitArgs)
@@ -1204,6 +1199,18 @@ return
 	memoizeOnPredicate = memoizeOnPredicate,
 	RandExecTrace = RandExecTrace,
 	lookupRandomChoiceValue = lookupRandomChoiceValue,
+
+	-- WARNING: Code interoperating with Quicksand can find this valuable,
+	--    but only use it if you know what you're doing.
+	__UNSAFE_setGlobalTrace__ = macro(function(newTrace)
+		assert(newTrace:gettype():ispointertostruct() and
+			   newTrace:gettype().type == GlobalTraceType(),
+			   "__UNSAFE_setGlobalTrace__: newTrace must have same type as Quicksand global trace type.")
+		return quote
+			[globalTrace()] = newTrace
+		end
+	end),
+
 	exports = 
 	{
 		func = func,
