@@ -43,6 +43,21 @@ end)
 
 --------------------------------------------
 
+D.uniformInt = S.memoize(function(real)
+	return {
+		sample = terra(lo: int, hi: int) : int
+			var u = R.random()
+			return int((1.0-u)*lo + u*hi)
+		end,
+		logprob = terra(val: int, lo: int, hi: int) : real
+			if val < lo or val >= hi then return [-math.huge] end
+			return -tmath.log(hi - lo)
+		end
+	}
+end)
+
+--------------------------------------------
+
 D.gaussian = S.memoize(function(real)
 	local flt = qs.float
 	return {

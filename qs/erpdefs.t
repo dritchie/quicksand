@@ -37,6 +37,12 @@ ERPs.uniform = erp.makeRandomChoice(
 
 --------------------------------------------
 
+ERPs.uniformInt = erp.makeRandomChoice(
+	distrib.uniformInt
+)
+
+--------------------------------------------
+
 ERPs.gaussian = erp.makeRandomChoice(
 	distrib.gaussian,
 	-- Drift kernel
