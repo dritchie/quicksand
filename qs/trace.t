@@ -593,7 +593,16 @@ local _RandExecTrace = S.memoize(function(program, real)
 	-- Create the global pointer variable for this trace type
 	local gTrace = globalTracePointer(RandExecTraceT)
 
-	terra RandExecTraceT:__init()
+	terra RandExecTraceT:printAddrStuff()
+		S.printf("trace - addr: %p\n", &self.addressStack)
+		[forAllRDBs(self, function(rdb)
+			return quote
+				S.printf("    rdb - addr: %p\n", rdb.addressStack)
+			end
+		end)]
+	end
+
+	terra RandExecTraceT:__init(doRejectionInit: bool) : {}
 		self.logprob = 0.0
 		self.loglikelihood = 0.0
 		self.newlogprob = 0.0
@@ -613,16 +622,22 @@ local _RandExecTrace = S.memoize(function(program, real)
 			end
 		end)]
 
-		while not self.conditionsSatisfied do
-			-- Clear out all random dbs
-			[forAllRDBs(self, function(rdb)
-				return quote
-					rdb:clear()
-				end
-			end)]
-			-- Try running from scratch
-			self:update(true)
+		if doRejectionInit then
+			while not self.conditionsSatisfied do
+				-- Clear out all random dbs
+				[forAllRDBs(self, function(rdb)
+					return quote
+						rdb:clear()
+					end
+				end)]
+				-- Try running from scratch
+				self:update(true)
+			end
 		end
+	end
+
+	terra RandExecTraceT:__init() : {}
+		self:__init(false)
 	end
 
 	-- Can almost just use the default copy constructor, but for needing 

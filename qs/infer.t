@@ -104,7 +104,7 @@ local function WeightedRejectionSample(numsamps)
 		local TraceType = trace.RandExecTrace(program, qs.float)
 		return terra(samples: &S.Vector(SampleType(program)))
 			for i=0,numsamps do
-				var tr = TraceType.salloc():init()
+				var tr = TraceType.salloc():init(true)
 				samples:insert()
 				var s = samples:get(samples:size()-1)
 				S.copy(s.value, tr.returnValue)

@@ -52,7 +52,7 @@ local function MCMC(kernel, params)
 			var verbose = (outstream ~= nil)
 			var iters = burnin + (nsamps*lag)
 			var t0 = 0.0
-			var currTrace = TraceType.salloc():init()
+			var currTrace = TraceType.salloc():init(true)
 			var k = KernelType.salloc():init()
 			for i=0,iters do
 				if verbose then
