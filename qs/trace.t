@@ -299,7 +299,6 @@ RandomDB = S.memoize(function(RandomChoiceT)
 	--    program is not changing.
 	local struct RandomDBT(Object)
 	{
-		addressStack: &Address,
 		-- TODO: If we have lots of random choices happening deep in the call stack,
 		--    a hash table will end of storing a ton of redundant information (a complete
 		--    copy of the adddress stack for each key). Maybe experiment with tries instead?
@@ -312,11 +311,6 @@ RandomDB = S.memoize(function(RandomChoiceT)
 		return RandomDB(RandomChoiceT.withRealType(real))
 	end
 
-	terra RandomDBT:__init(addressStack: &Address)
-		self:initmembers()
-		self.addressStack = addressStack
-	end
-
 	terra RandomDBT:lookupNonStructural()
 		-- Just retrieve the next choice in the flat list, and then
 		--   increment the index.
@@ -327,11 +321,11 @@ RandomDB = S.memoize(function(RandomChoiceT)
 
 	-- Returns the random choice, plus a boolean indicating whether the choice
 	--    was retrieved (true) or had to be created (false).
-	local function lookupStructural(self, initArgs)
+	local function lookupStructural(self, addressStackPtr, initArgs)
 		return quote
 			-- Retrieves the list of choices made at this lexical address (or creates an
 			--    empty list if no choices have yet been made here)
-			var clist, foundit = self.choicemap:getOrCreatePointer(@self.addressStack)
+			var clist, foundit = self.choicemap:getOrCreatePointer(@addressStackPtr)
 			-- If we've hit this lexical address more times than we have stored choices, then
 			--    we need to create a new database entry for the new choice.
 			if clist.choices:size() <= clist.counter then
@@ -360,16 +354,10 @@ RandomDB = S.memoize(function(RandomChoiceT)
 		for i=2,#argTypes do
 			argsyms:insert(symbol(argTypes[i]))
 		end
-		terra RandomDBT:lookupStructural([argsyms])
-			return [lookupStructural(self, argsyms)]
+		terra RandomDBT:lookupStructural(addressStackPtr: &Address, [argsyms])
+			return [lookupStructural(self, addressStackPtr, argsyms)]
 		end
 	end
-
-	terra RandomDBT:setAddressStack(addressStack: &Address)
-		self.addressStack = addressStack
-	end
-	RandomDBT.methods.setAddressStack:setinlined(true)
-
 
 	-- Clear out everything
 	terra RandomDBT:clear()
@@ -593,15 +581,6 @@ local _RandExecTrace = S.memoize(function(program, real)
 	-- Create the global pointer variable for this trace type
 	local gTrace = globalTracePointer(RandExecTraceT)
 
-	terra RandExecTraceT:printAddrStuff()
-		S.printf("trace - addr: %p\n", &self.addressStack)
-		[forAllRDBs(self, function(rdb)
-			return quote
-				S.printf("    rdb - addr: %p\n", rdb.addressStack)
-			end
-		end)]
-	end
-
 	terra RandExecTraceT:__init(doRejectionInit: bool) : {}
 		self.logprob = 0.0
 		self.loglikelihood = 0.0
@@ -618,7 +597,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 
 		[forAllRDBs(self, function(rdb)
 			return quote
-				rdb:init(&self.addressStack)
+				rdb:init()
 			end
 		end)]
 
@@ -638,27 +617,6 @@ local _RandExecTrace = S.memoize(function(program, real)
 
 	terra RandExecTraceT:__init() : {}
 		self:__init(false)
-	end
-
-	-- Can almost just use the default copy constructor, but for needing 
-	--    to make the 'addressStack' pointers in the rdbs correct
-	terra RandExecTraceT:__copy(other: &RandExecTraceT)
-		self:copymembers(other)
-		[forAllRDBs(self, function(rdb)
-			return quote
-				rdb:setAddressStack(&self.addressStack)
-			end
-		end)]
-	end
-	function RandExecTraceT.__copyFromRealType(real)
-		return terra(self: &RandExecTraceT, other: &RandExecTraceT.withRealType(real))
-			[RandExecTraceT.copyMembersFromRealType(real)](self, other)
-			[forAllRDBs(self, function(rdb)
-				return quote
-					rdb:setAddressStack(&self.addressStack)
-				end
-			end)]
-		end
 	end
 
 	terra RandExecTraceT:setTemperature(temp: qs.float)
@@ -707,7 +665,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 				else
 					var [initArgsTmp] = [initArgs]
 					self:pushAddressStack()
-					x, foundit = [rdbForType(self, RCType)]:lookupStructural([initArgsTmp])
+					x, foundit = [rdbForType(self, RCType)]:lookupStructural(&self.addressStack, [initArgsTmp])
 					self:popAddressStack()
 					if not foundit then
 						-- Increment self.newlogprob, since we just created a new random choice
