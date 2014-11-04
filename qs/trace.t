@@ -568,6 +568,16 @@ local _RandExecTrace = S.memoize(function(program, real)
 			end
 		end
 	end
+	local hasSatisfyingRCTypes = memoizeOnPredicate(function(predfn)
+		local has = false
+		for rct,_ in pairs(rcTypesUsed_mine) do
+			if predfn(rct) then
+				has = true
+				break
+			end
+		end
+		return has
+	end)
 	local function forAllRDBs(self, fn)
 		return forAllRCTypes(function(rct)
 			return fn(rdbForType(self, rct))
@@ -777,6 +787,12 @@ local _RandExecTrace = S.memoize(function(program, real)
 	end
 	RandExecTraceT.methods.addLikelihood:setinlined(true)
 
+	terra RandExecTraceT:setLikelihood(num: real)
+		self.logprob = self.logprob - self.loglikelihood + num
+		self.loglikelihood = num
+	end
+	RandExecTraceT.methods.setLikelihood:setinlined(true)
+
 
 	RandExecTraceT.methods.copyProbabilities = macro(function(self, other)
 		return quote
@@ -788,11 +804,13 @@ local _RandExecTrace = S.memoize(function(program, real)
 	end)
 
 
-	-- These two 'filter' functions allow the caller to get the number of random choices
+	-- These 'filter' functions allow the caller to get the number of random choices
 	--    whose type matches some predicate, or to retrieve such a random choice by index.
 
 	RandExecTraceT.countChoices = memoizeOnPredicate(function(predfn)
-		return terra(self: &RandExecTraceT)
+		assert(hasSatisfyingRCTypes(predfn),
+			"RandExecTraceT.countChoices: No random choices types satisfy the provided predicate\n")
+		local terra countChoices(self: &RandExecTraceT)
 			var count: uint64 = 0
 			[forAllRCTypes(function(rct)
 				if predfn(rct) then
@@ -801,9 +819,12 @@ local _RandExecTrace = S.memoize(function(program, real)
 			end)]
 			return count
 		end
+		return countChoices
 	end)
 
 	RandExecTraceT.getChoice = memoizeOnPredicate(function(predfn)
+		assert(hasSatisfyingRCTypes(predfn),
+			"RandExecTraceT.getChoice: No random choices types satisfy the provided predicate\n")
 
 		-- What we return from this function is a proxy object that forwards
 		--    all method calls to the appropriate random choice
@@ -1175,14 +1196,7 @@ return
 
 	-- WARNING: Code interoperating with Quicksand can find this valuable,
 	--    but only use it if you know what you're doing.
-	__UNSAFE_setGlobalTrace__ = macro(function(newTrace)
-		assert(newTrace:gettype():ispointertostruct() and
-			   newTrace:gettype().type == GlobalTraceType(),
-			   "__UNSAFE_setGlobalTrace__: newTrace must have same type as Quicksand global trace type.")
-		return quote
-			[globalTrace()] = newTrace
-		end
-	end),
+	__UNSAFE_getGlobalTrace__ = globalTrace,
 
 	exports = 
 	{
