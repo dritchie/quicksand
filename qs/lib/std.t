@@ -270,10 +270,12 @@ function S.Vector(T,debug)
         self._size = self._size + N
         self:reserve(self._size)
         
-        var i = self._size
-        while i > idx do
-            self._data[i - 1] = self._data[i - 1 - N]
-            i = i - 1
+        if self._size > N then
+            var i = self._size
+            while i > idx do
+                self._data[i - 1] = self._data[i - 1 - N]
+                i = i - 1
+            end
         end
         
         for i = 0ULL,N do
@@ -313,7 +315,7 @@ function S.Vector(T,debug)
         self._size = 0
     end
 
-    Vector.methods.__copy = terra(self: &Vector, other: &Vector) : {}
+    terra Vector:__copy(other: &Vector) : {}
         self:__init(other:size())
         for i=0,other:size() do
             self:insert()
