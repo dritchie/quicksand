@@ -246,13 +246,11 @@ function S.Vector(T,debug)
         end
     end
     terra Vector:__destruct()
-        assert(self._capacity >= self._size)
-        for i = 0ULL,self._size do
-            S.rundestructor(self._data[i])
-        end
+        self:clear()
         if self._data ~= nil then
             C.free(self._data)
             self._data = nil
+            self._capacity = 0
         end
     end
     terra Vector:size() return self._size end
