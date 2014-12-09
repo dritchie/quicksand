@@ -500,19 +500,19 @@ qs.program(function()
 	end
 end), 0.7599, qs.MCMC)
 
-expectedValueTest(
-"transdimensional expectation",
-qs.program(function()
-	return terra()
-		var a = 0.7
-		if qs.flip(0.9) then
-			a = qs.beta(1.0, 5.0, {struc=false})
-		end
-		var b = qs.flip(a, {struc=false})
-		qs.condition(b)
-		return a
-	end
-end), 0.417, qs.MCMC)
+-- expectedValueTest(
+-- "transdimensional expectation",
+-- qs.program(function()
+-- 	return terra()
+-- 		var a = 0.7
+-- 		if qs.flip(0.9) then
+-- 			a = qs.beta(1.0, 5.0, {struc=false})
+-- 		end
+-- 		var b = qs.flip(a, {struc=false})
+-- 		qs.condition(b)
+-- 		return a
+-- 	end
+-- end), 0.417, qs.MCMC)
 
 expectedValueTest(
 "transdimensional expectation (LARJ)",
