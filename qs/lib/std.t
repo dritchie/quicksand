@@ -245,6 +245,10 @@ function S.Vector(T,debug)
             self._data = [&T](S.realloc(self._data,sizeof(T)*self._capacity))
         end
     end
+    terra Vector:resize(size: uint64)
+        self:reserve(size)
+        self._size = size
+    end
     terra Vector:__destruct()
         self:clear()
         if self._data ~= nil then
