@@ -1,9 +1,9 @@
-local S = terralib.require("qs.lib.std")
-local qs = terralib.require("qs.globals")
-local progmod = terralib.require("qs.progmodule")
-local trace = terralib.require("qs.trace")
-local tmath = terralib.require("qs.lib.tmath")
-local HashMap = terralib.require("qs.lib.hashmap")
+local S = require("qs.lib.std")
+local qs = require("qs.globals")
+local progmod = require("qs.progmodule")
+local trace = require("qs.trace")
+local tmath = require("qs.lib.tmath")
+local HashMap = require("qs.lib.hashmap")
 
 
 -- A sample drawn from a probabilistic program.

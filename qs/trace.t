@@ -1,10 +1,10 @@
-local util = terralib.require("qs.lib.util")
+local util = require("qs.lib.util")
 
-local S = terralib.require("qs.lib.std")
-local qs = terralib.require("qs.globals")
-local Hash = terralib.require("qs.lib.hash")
-local HashMap = terralib.require("qs.lib.hashmap")
-local distrib = terralib.require("qs.distrib")
+local S = require("qs.lib.std")
+local qs = require("qs.globals")
+local Hash = require("qs.lib.hash")
+local HashMap = require("qs.lib.hashmap")
+local distrib = require("qs.distrib")
 
 
 

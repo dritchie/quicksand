@@ -1,7 +1,7 @@
 -- Re-implementation of stan's "stack_alloc.hpp" in pure Terra to allow for inlining.
 -- See STAN_ROOT/src/stan/memory/stack_alloc.hpp for more documentation.
 
-local S = terralib.require("qs.lib.std")
+local S = require("qs.lib.std")
 
 
 local terra is_aligned(ptr: &int8, bytes_aligned: uint)

@@ -1,11 +1,11 @@
-local util = terralib.require("qs.lib.util")
+local util = require("qs.lib.util")
 
-local S = terralib.require("qs.lib.std")
-local qs = terralib.require("qs.globals")
-local mcmc = terralib.require("qs.mcmc")
-local distrib = terralib.require("qs.distrib")
-local tmath = terralib.require("qs.lib.tmath")
-local random = terralib.require("qs.lib.random")
+local S = require("qs.lib.std")
+local qs = require("qs.globals")
+local mcmc = require("qs.mcmc")
+local distrib = require("qs.distrib")
+local tmath = require("qs.lib.tmath")
+local random = require("qs.lib.random")
 
 
 -- An MCMC kernel that performs Hit And Run Metroplis sampling

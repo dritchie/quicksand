@@ -1,7 +1,7 @@
-local qs = terralib.require("qs")
-local S = terralib.require("qs.lib.std")
-local D = terralib.require("qs.distrib")
-local M = terralib.require("qs.lib.tmath")
+local qs = require("qs")
+local S = require("qs.lib.std")
+local D = require("qs.distrib")
+local M = require("qs.lib.tmath")
 
 local C = terralib.includecstring [[
 #include <stdio.h>
