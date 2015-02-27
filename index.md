@@ -29,7 +29,7 @@ Quicksand has been tested on OSX and should also work on Linux. On Windows, your
 
 Let's take a look at a simple Quicksand program--a probabilistic "Hello, World," if you will:
 
-	local qs = terralib.require("qs")
+	local qs = require("qs")
 
 	local p1 = qs.program(function()
 		return terra()
@@ -44,9 +44,9 @@ The probabilistic program `p1` draws two random values via unbiased coin flips (
 
 Here's a slightly more complex (and useful) example: estimating parameters of a Gaussian mixture model from data:
 
-	local qs = terralib.require("qs")
-	local std = terralib.require("qs.lib.std")
-	local distrib = terralib.require("qs.distrib")
+	local qs = require("qs")
+	local std = require("qs.lib.std")
+	local distrib = require("qs.distrib")
 
 	local p2 = qs.program(function()
 
