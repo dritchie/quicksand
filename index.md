@@ -51,7 +51,7 @@ Here's a slightly more complex (and useful) example: estimating parameters of a 
 	local p2 = qs.program(function()
 
 		-- Populate a global vector with synthetic data
-		local data = global(S.Vector(qs.real))
+		local data = global(std.Vector(qs.real))
 		local norm = distrib.gaussian(qs.real).sample
 		local terra initdata()
 			data:init()
