@@ -3,7 +3,7 @@ local U = {}
 
 function U.includec_path(filename)
 	local cpath = os.getenv("C_INCLUDE_PATH") or "."
-	return terralib.includec(filename, "-I", cpath)
+	return terralib.includec(filename, {"-I", cpath})
 end
 
 

@@ -72,7 +72,7 @@ local function getStructuralOption(s)
 		end
 	end
 	if index > 0 then
-		local value = s.tree.expression.expressions[index].value
+		local value = s.tree.expressions[index].value
 		assert(value ~= nil and (type(value) == "boolean" or type(value.object) == "cdata"),
 			string.format("'%s' option for a random choice must be a boolean compile-time constant", Options.Structural))
 		if type(value) ~= "boolean" then
@@ -282,15 +282,7 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 
 		local function paramField(i) return string.format("param%d", i) end
 
-		-- Declare struct type and add members for value, params, and bounds (if needed)
-		local struct RandomChoiceT(trace.Object)
-		{
-			logprob: real,
-			active: bool, 		 -- Was this choice reachable in last run of program?
-			needsRescore: bool,  -- Do we need to recalculate the prior probability of this choice?
-								 --   (because external code i.e. changed its value)
-			lexid: uint 		 -- Lexically-unique ID
-		}
+		-- Determine value and parameter types
 		local ValueType = sl.sample:gettype().returntype
 		assert(util.isPOD(ValueType) or ValueType:getmethod("copy"),
 			"Non-POD value type for a random choice must have a 'copy' initialization method")
@@ -305,10 +297,25 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 					"Non-POD parameters to a random choice must have a 'copy' initialization method")
 			end
 		end
-		RandomChoiceT.entries:insert({field="value", type=ValueType})
+
+		-- Declare struct type and add members for value, params, and bounds (if needed)
+		local struct RandomChoiceT
+		{
+			logprob: real,
+			active: bool, 		 -- Was this choice reachable in last run of program?
+			needsRescore: bool,  -- Do we need to recalculate the prior probability of this choice?
+								 --   (because external code i.e. changed its value)
+			lexid: uint, 		 -- Lexically-unique ID
+			value: ValueType
+		}
 		for i,spt in ipairs(StoredParamTypes) do
 			RandomChoiceT.entries:insert({field=paramField(i), type=spt})
 		end
+		-- Have to apply the metatype this way instead of as a modifier on the struct declaration,
+		--    b/c S.Object (which trace.Object calls) now causes the type to become complete (I think
+		--    this has to do with terra's switch to eager typechecking). So any entries added to the
+		--    type after this point don't actually get added to the type...
+		trace.Object(RandomChoiceT)
 
 		function RandomChoiceT.withRealType(real) return RandomChoice(real, isStructural) end
 
@@ -540,36 +547,60 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 		end
 
 
+		-- Rescore by recomputing prior logprob
+		terra RandomChoiceT:rescore() : {}
+			var val = self:getValue()
+			self.logprob = sl.logprob(escape
+				if sl.logprob:gettype().parameters[1] == &ValueType then
+					emit `&val
+				else
+					emit `val
+				end
+			end, [paramArgList(self)])
+			escape
+				if applyingBounds then
+					emit quote
+						self.logprob = self.logprob + [lpincr(`self:getStoredValue(), self)]
+					end
+				end
+			end
+			self.needsRescore = false
+		end
+
 		-- Constructor 1: Has an initial value
 		local paramSyms = ParamTypes:map(function(pt) return symbol(pt) end)
 		local initValSym = symbol(util.isPOD(ValueType) and ValueType or &ValueType)
-		terra RandomChoiceT:__init([paramSyms], lexid: uint, [initValSym]) : {}
-			escape
-				for i=1,#ParamTypes do
-					emit quote ptrSafeCopy(self.[paramField(i)], [paramSyms[i]]) end
+		RandomChoiceT.methods.__init = terralib.overloadedfunction('RandomChoiceT.__init', {
+			terra(self: &RandomChoiceT, [paramSyms], lexid: uint, [initValSym]) : {}
+				escape
+					for i=1,#ParamTypes do
+						emit quote ptrSafeCopy(self.[paramField(i)], [paramSyms[i]]) end
+					end
 				end
-			end
-			var val = [util.isPOD(ValueType) and initValSym or (`@initValSym)]
-			escape
-				if applyingBounds then
-					emit quote S.copy(self.value, [inv(val, self)]) end
-				else
-					emit quote S.copy(self.value, val) end
+				var val = [util.isPOD(ValueType) and initValSym or (`@initValSym)]
+				escape
+					if applyingBounds then
+						emit quote S.copy(self.value, [inv(val, self)]) end
+					else
+						emit quote S.copy(self.value, val) end
+					end
 				end
+				self:rescore()
+				self.active = true
+				self.lexid = lexid
 			end
-			self:rescore()
-			self.active = true
-			self.lexid = lexid
-		end
+		})
 
 		-- Constructor 2: Has no initial value
 		paramSyms = ParamTypes:map(function(pt) return symbol(pt) end)
-		terra RandomChoiceT:__init([paramSyms], lexid: uint) : {}
-			-- Draw a sample, then call the other constructor
-			var sampledval = sl.sample([paramSyms])
-			self:__init([paramSyms], lexid,
-				        [util.isPOD(ValueType) and sampledval or (`&sampledval)])
-		end
+		RandomChoiceT.methods.__init:adddefinition(
+			terra(self: &RandomChoiceT, [paramSyms], lexid: uint) : {}
+				-- Draw a sample, then call the other constructor
+				var sampledval = sl.sample([paramSyms])
+				self:__init([paramSyms], lexid,
+					        [util.isPOD(ValueType) and sampledval or (`&sampledval)])
+			end
+		)
 
 		-- Update for a new run of the program, checking for parameter changes
 		paramSyms = ParamTypes:map(function(pt) return symbol(pt) end)
@@ -618,26 +649,6 @@ local function makeRandomChoice(sampleAndLogprob, proposal, bounding)
 		-- Retrieve lexically-unique ID
 		terra RandomChoiceT:getLexicalID() return self.lexid end
 		RandomChoiceT.methods.getLexicalID:setinlined(true)		
-
-		-- Rescore by recomputing prior logprob
-		terra RandomChoiceT:rescore() : {}
-			var val = self:getValue()
-			self.logprob = sl.logprob(escape
-				if sl.logprob:gettype().parameters[1] == &ValueType then
-					emit `&val
-				else
-					emit `val
-				end
-			end, [paramArgList(self)])
-			escape
-				if applyingBounds then
-					emit quote
-						self.logprob = self.logprob + [lpincr(`self:getStoredValue(), self)]
-					end
-				end
-			end
-			self.needsRescore = false
-		end
 
 		-- Propose new value, return fwd/rvs proposal probabilities
 		terra RandomChoiceT:proposal() : {real, real}

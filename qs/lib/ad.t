@@ -59,7 +59,7 @@ local DualNum = S.memoize(function(...)
 			table.insert(args, (select(i, ...)))
 		end
 		return quote
-			var dnptr = [&DualNumT](memPool:alloc(sizeof(DualNumT)))
+			var dnptr = [&DualNumT](memPool:allocate(sizeof(DualNumT)))
 			dnptr.val = val
 			dnptr.adj = 0.0
 			[makeFieldExpList(dnptr, numExtraFields)] = [args]
@@ -107,10 +107,13 @@ end
 
 -- =============== FUNCTION GENERATION ===============
 
-
+-- This is horrible--why did I ever think it would be a good idea to implement
+--    an 'optimization' that depends on AST internals?
 local function getvalue(terraquote)
-	assert(terraquote.tree.expression.value)
-	return terraquote.tree.expression.value
+	-- assert(terraquote.tree.expression.value)
+	-- return terraquote.tree.expression.value
+	assert(terraquote.tree.symbol)
+	return terraquote.tree.symbol
 end
 
 -- Boxing up values so that they must be 'touched' before they can
@@ -131,7 +134,8 @@ end)
 --    that defines a 'val' method.
 -- Extracts the primal value 
 local val = macro(function(x)
-	if x:gettype():getmethod("val") then
+	local T = x:gettype()
+	if T:isstruct() and T:getmethod("val") then
 		return `x:val()
 	else
 		return x
@@ -244,14 +248,14 @@ local function makeOverloadedADFunction(numArgTypes, fwdFn, adjFnTemplate, comps
 			adjFn, usedargindices = adjFnTemplate(unpack(adjArgTypes))
 		end
 		local fn = makeADFunction(types, fwdFn, adjFn, usedargindices)
+		fn:setinlined(true)
 		if not overallfn then
-			overallfn = fn
+			overallfn = terralib.overloadedfunction('__overloadedADFunction__', {fn})
 		else
-			overallfn:adddefinition(fn:getdefinitions()[1])
+			overallfn:adddefinition(fn)
 		end
 		bitstring = bitstring + 1
 	end
-	overallfn:setinlined(true)
 	return overallfn
 end
 
@@ -261,15 +265,16 @@ end
 --   The indices of these arguments are in the second return value.
 local function adjoint(fntemp)
 	return function(...)
+		usedargtable = {}
 		local specializedfn = fntemp(...)
 		specializedfn:setinlined(true)
-		usedargtable = {}
 		specializedfn:compile()
 
 		-- Match up used arguments with their types
 		local usedtypeindices = {}
 		local usedtypes = {}
-		local adjfnparams = specializedfn:getdefinitions()[1].typedtree.parameters
+		-- local adjfnparams = specializedfn:getdefinitions()[1].typedtree.parameters
+		local adjfnparams = specializedfn.definition.parameters
 		for i,arg in ipairs(adjfnparams) do
 			-- Skip arg 1, b/c that's the var itself
 			if i ~= 1 then
@@ -320,10 +325,15 @@ local admath = {}
 for k,v in pairs(cmath) do admath[k] = v end
 
 local function addADFunction_simple(name, fn)
-	local primalfn = admath[name]
-	for i,def in ipairs(fn:getdefinitions()) do
-		primalfn:adddefinition(def)
+	local ofn = terralib.overloadedfunction(name, { admath[name] })
+	if terralib.isfunction(fn) then
+		ofn:adddefinition(fn)
+	elseif terralib.isoverloadedfunction(fn) then
+		for i,def in ipairs(fn:getdefinitions()) do
+			ofn:adddefinition(def)
+		end
 	end
+	admath[name] = ofn
 end
 
 local function addADFunction_overloaded(name, numArgs, fwdFn, adjFnTemplate)
@@ -549,29 +559,37 @@ terra(a: num) : num
 end)
 
 -- FMAX
-local terra fmax(a: num, b: double)
-	if a:val() >= b then return a else return num(b) end
+local fmax = terralib.overloadedfunction('fmax', {
+	terra(a: num, b: double)
+		if a:val() >= b then return a else return num(b) end
+	end,
+	terra(a: double, b: num)
+		if a > b:val() then return num(a) else return b end
+	end,
+	terra(a: num, b: num)
+		if a:val() > b:val() then return a else return b end
+	end
+})
+for i,def in ipairs(fmax:getdefinitions()) do
+	def:setinlined(true)
 end
-local terra fmax(a: double, b: num)
-	if a > b:val() then return num(a) else return b end
-end
-local terra fmax(a: num, b: num)
-	if a:val() > b:val() then return a else return b end
-end
-fmax:setinlined(true)
 addADFunction("fmax", fmax)
 
 -- FMIN
-local terra fmin(a: num, b: double)
-	if a:val() <= b then return a else return num(b) end
+local fmin = terralib.overloadedfunction('fmin', {
+	terra(a: num, b: double)
+		if a:val() <= b then return a else return num(b) end
+	end,
+	terra(a: double, b: num)
+		if a < b:val() then return num(a) else return b end
+	end,
+	terra(a: num, b: num)
+		if a:val() < b:val() then return a else return b end
+	end
+})
+for i,def in ipairs(fmin:getdefinitions()) do
+	def:setinlined(true)
 end
-local terra fmin(a: double, b: num)
-	if a < b:val() then return num(a) else return b end
-end
-local terra fmin(a: num, b: num)
-	if a:val() < b:val() then return a else return b end
-end
-fmin:setinlined(true)
 addADFunction("fmin", fmin)
 
 -- LOG
@@ -687,28 +705,36 @@ end
 -- Compute the gradient of self w.r.t all other variables
 -- Until the next arithmetic op on a num, the adjoints for all other variables
 --    will still be correct (though memory has been released for re-use)
-terra num:grad(clearTape: bool) : {}
-	grad(@self)
-	if clearTape then recoverMemory() end
-end
-terra num:grad() : {}
-	self:grad(true)
-end
+num.methods.grad = terralib.overloadedfunction('num.grad', {
+	terra(self: &num, clearTape: bool) : {}
+		grad(@self)
+		if clearTape then recoverMemory() end
+	end
+})
+num.methods.grad:adddefinition(
+	terra(self: &num) : {}
+		self:grad(true)
+	end
+)
 
 -- Compute the gradient of self w.r.t the given vector of
 -- variables and store the result in the given vector of doubles
-terra num:grad(indeps: &S.Vector(num), gradient: &S.Vector(double), clearTape: bool) : {}
-	grad(@self)
-	gradient:clear()
-	gradient:reserve(indeps:size())
-	for i=0,indeps:size() do
-		gradient:insert(indeps(i):adj())
+num.methods.grad:adddefinition(
+	terra(self: &num, indeps: &S.Vector(num), gradient: &S.Vector(double), clearTape: bool) : {}
+		grad(@self)
+		gradient:clear()
+		gradient:reserve(indeps:size())
+		for i=0,indeps:size() do
+			gradient:insert(indeps(i):adj())
+		end
+		if clearTape then recoverMemory() end
 	end
-	if clearTape then recoverMemory() end
-end
-terra num:grad(indeps: &S.Vector(num), gradient: &S.Vector(double)) : {}
-	self:grad(indeps, gradient, true)
-end
+)
+num.methods.grad:adddefinition(
+	terra(self: &num, indeps: &S.Vector(num), gradient: &S.Vector(double)) : {}
+		self:grad(indeps, gradient, true)
+	end
+)
 
 
 -- =============== EXPORTS ===============

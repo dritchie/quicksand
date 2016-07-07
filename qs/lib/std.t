@@ -176,6 +176,9 @@ end)
 -- destruct will call destruct on child nodes
 function S.Object(T)
     --fill in special methods/macros
+    terra T:destruct() : {}
+        generatedtor(@self)
+    end
     terra T:delete() : {}
         self:destruct()
         C.free(self)
@@ -191,9 +194,6 @@ function S.Object(T)
             &t
         end
     end)
-    terra T:destruct() : {}
-        generatedtor(@self)
-    end
     T.methods.init = macro(function(self, ...)
         local args = {...}
         return quote
@@ -226,13 +226,6 @@ function S.Vector(T,debug)
     Vector.isstdvector = true
     Vector.type = T
     local assert = debug and S.assert or macro(function() return quote end end)
-    terra Vector:__init() : {}
-        self._data,self._size,self._capacity = nil,0,0
-    end
-    terra Vector:__init(cap : uint64) : {}
-        self:__init()
-        self:reserve(cap)
-    end
     terra Vector:reserve(cap : uint64)
         if cap > 0 and cap > self._capacity then
             var oc = self._capacity
@@ -245,9 +238,27 @@ function S.Vector(T,debug)
             self._data = [&T](S.realloc(self._data,sizeof(T)*self._capacity))
         end
     end
+    Vector.methods.__init = terralib.overloadedfunction('Vector.__init', {
+        terra(self : &Vector) : {}
+            self._data,self._size,self._capacity = nil,0,0
+        end
+    })
+    Vector.methods.__init:adddefinition(
+        terra(self: &Vector, cap: uint64) : {}
+            self:__init()
+            self:reserve(cap)
+        end
+    )
     terra Vector:resize(size: uint64)
         self:reserve(size)
         self._size = size
+    end
+    terra Vector:clear() : {}
+        assert(self._capacity >= self._size)
+        for i = 0ULL,self._size do
+            S.rundestructor(self._data[i])
+        end
+        self._size = 0
     end
     terra Vector:__destruct()
         self:clear()
@@ -266,57 +277,59 @@ function S.Vector(T,debug)
     Vector.metamethods.__apply = macro(function(self,idx)
         return `@self:get(idx)
     end)
-    
-    terra Vector:insert(idx : uint64, N : uint64, v : T) : {}
-        assert(idx <= self._size)
-        self._size = self._size + N
-        self:reserve(self._size)
-        
-        if self._size > N then
-            var i = self._size
-            while i > idx do
-                self._data[i - 1] = self._data[i - 1 - N]
-                i = i - 1
+    Vector.methods.insert = terralib.overloadedfunction('Vector.insert', {
+        terra(self : &Vector, idx : uint64, N : uint64, v : T) : {}
+            assert(idx <= self._size)
+            self._size = self._size + N
+            self:reserve(self._size)
+            
+            if self._size > N then
+                var i = self._size
+                while i > idx do
+                    self._data[i - 1] = self._data[i - 1 - N]
+                    i = i - 1
+                end
+            end
+            
+            for i = 0ULL,N do
+                self._data[idx + i] = v
             end
         end
-        
-        for i = 0ULL,N do
-            self._data[idx + i] = v
+    })
+    Vector.methods.insert:adddefinition(
+        terra(self: &Vector, idx : uint64, v : T) : {}
+            return self:insert(idx,1,v)
         end
-    end
-    terra Vector:insert(idx : uint64, v : T) : {}
-        return self:insert(idx,1,v)
-    end
-    terra Vector:insert(v : T) : {}
-        return self:insert(self._size,1,v)
-    end
-    terra Vector:insert() : &T
-        self._size = self._size + 1
-        self:reserve(self._size)
-        return self:get(self._size - 1)
-    end
-    terra Vector:remove(idx : uint64) : T
-        assert(idx < self._size)
-        var v = self._data[idx]
-        self._size = self._size - 1
-        for i = idx,self._size do
-            self._data[i] = self._data[i + 1]
+    )
+    Vector.methods.insert:adddefinition(
+        terra(self: &Vector, v : T) : {}
+            return self:insert(self._size,1,v)
         end
-        return v
-    end
-    terra Vector:remove() : T
-        assert(self._size > 0)
-        return self:remove(self._size - 1)
-    end
-
-    terra Vector:clear() : {}
-        assert(self._capacity >= self._size)
-        for i = 0ULL,self._size do
-            S.rundestructor(self._data[i])
+    )
+    Vector.methods.insert:adddefinition(
+        terra(self: &Vector) : &T
+            self._size = self._size + 1
+            self:reserve(self._size)
+            return self:get(self._size - 1)
         end
-        self._size = 0
-    end
-
+    )
+    Vector.methods.remove = terralib.overloadedfunction('Vector.remove', {
+        terra(self: &Vector, idx : uint64) : T
+            assert(idx < self._size)
+            var v = self._data[idx]
+            self._size = self._size - 1
+            for i = idx,self._size do
+                self._data[i] = self._data[i + 1]
+            end
+            return v
+        end
+    })
+    Vector.methods.remove:adddefinition(
+        terra(self: &Vector) : T
+            assert(self._size > 0)
+            return self:remove(self._size - 1)
+        end
+    )
     terra Vector:__copy(other: &Vector) : {}
         self:__init(other:size())
         for i=0,other:size() do
@@ -324,25 +337,17 @@ function S.Vector(T,debug)
             S.copy(self(i), other(i))
         end
     end
-
-    Vector.metamethods.__eq = terra(self: Vector, other: Vector) : bool
-        if self:size() ~= other:size() then return false end
-        for i=0,self:size() do
-            if not (self(i) == other(i)) then return false end
-        end
-        return true
-    end
-    Vector.metamethods.__eq:setinlined(true)
-
-    Vector.metamethods.__for = function(syms, iter, body)
-        local e = symbol()
-        return {`@e}, quote
-            var self = iter
+    -- If element type is a struct, can only do equality checking if element
+    --    struct type provides an equality metamethod
+    if not T:isstruct() or T.metamethods.__eq then
+        Vector.metamethods.__eq = terra(self: Vector, other: Vector) : bool
+            if self:size() ~= other:size() then return false end
             for i=0,self:size() do
-                var [e] = self:get(i)
-                body
+                if not (self(i) == other(i)) then return false end
             end
+            return true
         end
+        Vector.metamethods.__eq:setinlined(true)
     end
     
     return Vector

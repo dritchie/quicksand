@@ -52,10 +52,10 @@ terra MemoryPool:__init() : {}
 	self.maxAlloced = 0U
 end
 
-terra MemoryPool:__destruct()
+terra MemoryPool:__destruct() : {}
 	-- Free all blocks
 	for i=0,self.blocks_:size() do
-		if self.blocks_(i) then
+		if self.blocks_(i) ~= nil then
 			S.free(self.blocks_(i))
 		end
 	end
@@ -89,7 +89,7 @@ terra MemoryPool:__move_to_next_block(len: uint)
 	return result
 end
 
-terra MemoryPool:alloc(len: uint)
+terra MemoryPool:allocate(len: uint)
 	-- Typically, just return and increment the next location.
 	var result = self.next_loc_
 	self.next_loc_ = self.next_loc_ + len
@@ -100,7 +100,6 @@ terra MemoryPool:alloc(len: uint)
 	self.currAlloced = self.currAlloced + len
 	return result
 end
--- MemoryPool.methods.alloc:setinlined(true)
 
 terra MemoryPool:recoverAll()
 	self.cur_block_ = 0
@@ -116,7 +115,7 @@ end
 terra MemoryPool:freeAll()
 	-- Free all but the first block
 	for i=1,self.blocks_:size() do
-		if self.blocks_(i) then
+		if self.blocks_(i) ~= nil then
 			S.free(self.blocks_(i))
 		end
 	end

@@ -153,7 +153,11 @@ end
 
 print("starting tests...")
 
-qs.initrand()
+-- Done this way b/c currently can't call overloaded Terra functions from Lua
+local terra initrand()
+	qs.initrand()
+end
+initrand()
 
 local terra testLogprobFunctions()
 	assertEq("bernoulli lp (1)", [D.bernoulli(double)].logprob(true, 0.3), M.log(0.3))

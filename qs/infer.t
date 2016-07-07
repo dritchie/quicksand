@@ -17,16 +17,18 @@ local Sample = S.memoize(function(T)
 		loglikelihood: qs.float
 	}
 	function Sample.metamethods.__typename() return ("Sample(%s)"):format(tostring(T)) end
-	terra Sample:__init(val: T, lp: qs.float, ll: qs.float) : {}
-		self.value = val
-		self.logprob = lp
-		self.loglikelihood = ll
-	end
-	terra Sample:__init(val: T) : {}
-		self.value = val
-		self.logprob = 0.0
-		self.loglikelihood = 0.0
-	end
+	Sample.methods.__init = terralib.overloadedfunction('Sample.__init', {
+		terra(self: &Sample, val: T, lp: qs.float, ll: qs.float) : {}
+			self.value = val
+			self.logprob = lp
+			self.loglikelihood = ll
+		end,
+		terra(self: &Sample, val: T) : {}
+			self.value = val
+			self.logprob = 0.0
+			self.loglikelihood = 0.0
+		end
+	})
 	terra Sample:__copy(other: &Sample)
 		S.copy(self.value, other.value)
 		self.logprob = other.logprob

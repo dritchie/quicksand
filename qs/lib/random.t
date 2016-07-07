@@ -10,11 +10,13 @@ local R = {}
 
 R.random = CRand.random_
 
-terra R.initrand(seed: uint)
-	CRand.srand(seed)
-end
-terra R.initrand()
-	CRand.initrand_()
-end
+R.initrand = terralib.overloadedfunction('initrand', {
+	terra(seed: uint)
+		CRand.srand(seed)
+	end,
+	terra()
+		CRand.initrand_()
+	end
+})
 
 return R
