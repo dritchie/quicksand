@@ -3,9 +3,8 @@ local U = {}
 
 function U.includec_path(filename)
 	local cpath = os.getenv("C_INCLUDE_PATH") or "."
-	return terralib.includec(filename, "-I", cpath)
+	return terralib.includec(filename, {"-I", cpath})
 end
-
 
 -- Is a type "plain old data," according to Standard Object conventions?
 -- Used in some places to determine when something should be passed by value or by pointer

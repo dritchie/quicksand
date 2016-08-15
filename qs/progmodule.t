@@ -37,7 +37,10 @@ local progcompile = S.memoize(function(self, real)
 	--    the program requires us to compile a trace type, but
 	--    compiling the trace type requires us to compile the program...
 	local tfn = self.specializationFn(self, real, false)
-	tfn:compile(function() trace.compilation.endCompilation() end)
+	-- Terra release-2016-02-026 no longer supports async option on :compile, but it does
+	--    still support it on :gettype (which in turn has to invoke :compile)
+	-- tfn:compile(function() trace.compilation.endCompilation() end)
+	tfn:gettype(function() trace.compilation.endCompilation() end)
 
 	return { prog=tfn, RetType=RetType }
 end)
