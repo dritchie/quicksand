@@ -530,9 +530,7 @@ local _RandExecTrace = S.memoize(function(program, real)
 		conditionsSatisfied: bool,
 		returnValue: RetType,
 		-- This starts out false, but is forever after set to true as soon as :update() is run
-		-- IMPORTANT: Everything works out fine, provided the destructor is never invoked before
-		--    the first run of :update(). I don't think this should ever happen, since :update()
-		--    happens in :__init()
+		-- The destructor will skip the 'returnValue' field if this is set to false
 		hasReturnValue: bool,
 
 		addressStack: Address,
@@ -627,6 +625,28 @@ local _RandExecTrace = S.memoize(function(program, real)
 
 	terra RandExecTraceT:__init() : {}
 		self:__init(false)
+	end
+
+	-- Custom destructor logic to skip 'returnValue' when it hasn't yet been initialized
+	terra RandExecTraceT:__destructmembers() : {}
+		escape
+			local entries = RandExecTraceT:getentries()
+	        for i,e in ipairs(entries) do
+	            if e.field then --not a union
+	            	if e.field == 'returnValue' then
+	            		emit quote
+	            			if self.hasReturnValue then
+	            				S.rundestructor(self.returnValue)
+	            			end
+	            		end
+	            	else
+	                	emit quote
+	                		S.rundestructor(self.[e.field])
+	                	end
+	                end
+	            end
+	        end
+		end
 	end
 
 	terra RandExecTraceT:setTemperature(temp: qs.float)
