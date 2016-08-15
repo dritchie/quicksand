@@ -13,6 +13,8 @@ Quicksand is a library for [probabilistic programming](http://web.stanford.edu/~
 
 You'll first need to download and build [Terra](http://terralang.org).
 
+**Important: Quicksand works with with the [2016-02-26 release of Terra](https://github.com/zdevito/terra/releases/tag/release-2016-02-26), but will not work with later versions (due to the switch from lazy to eager typechecking).** This project is not under active development, so there are currently no plans to overhaul Quicksand to make it compatible with future versions of Terra.
+
 Then just add the following to your `.profile`, `.bashrc`, or equivalent file:
 
 	export QS=[path to quicksand root]
